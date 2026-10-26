@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/yingquelou/analyzer/schema/config.schema.json",
+  "title": "analyzer 配置",
+  "description": "analyzer 的配置：version + 词法规则 rules + 文法 grammar。rules[].pattern 与 grammar.productions[].rhs 一律是结构化对象，不接受字符串。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["grammar"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "给编辑器用的 schema 路径，加载时忽略。"
+    },
+    "version": {
+      "type": "integer",
+      "const": 2,
+      "default": 2,
+      "description": "配置格式版本。version 2 起 pattern / rhs 只接受结构化对象；version 1 的字符串写法已废弃。"
+    },
+    "rules": {
+      "type": "array",
+      "description": "词法规则；顺序不影响匹配（最长匹配优先，同长度看 priority）。",
+      "items": { "$ref": "#/$defs/rule" }
+    },
+    "grammar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["productions"],
+      "properties": {
+        "start": {
+          "type": "string",
+          "minLength": 1,
+          "description": "起始符号；省略时取第一条产生式。"
+        },
+        "productions": {
+          "type": "array",
+          "minItems": 1,
+          "description": "产生式；同名的多条视为多个候选。",
+          "items": { "$ref": "#/$defs/production" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "pattern"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "规则名，会成为 token 的 kind；文法里用 { \"token\": \"name\" } 引用。"
+        },
+        "pattern": { "$ref": "#/$defs/pattern" },
+        "priority": {
+          "type": "integer",
+          "default": 0,
+          "description": "同长度竞争时的优先级，越大越优先。"
+        },
+        "skip": {
+          "type": "boolean",
+          "default": false,
+          "description": "只消费源码、不产出 token（空白、注释）。"
+        }
+      }
+    },
+    "pattern": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "maxProperties": 1,
+      "description": "结构化的模式对象，只写一个键：regex / literal / chars / not_chars / seq / alt / star / plus / opt。",
+      "properties": {
+        "regex": { "type": "string", "minLength": 1, "description": "整段正则。需要前后瞻、命名分组时用它。" },
+        "literal": { "type": "string", "minLength": 1, "description": "精确匹配，元字符自动转义。" },
+        "chars": { "type": "string", "minLength": 1, "description": "字符集合内容，编译成 [内容]。例如 0-9。" },
+        "not_chars": { "type": "string", "minLength": 1, "description": "排除型字符集合，编译成 [^内容]。" },
+        "seq": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/pattern" },
+          "description": "依次匹配。"
+        },
+        "alt": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/pattern" },
+          "description": "任选其一。"
+        },
+        "star": { "$ref": "#/$defs/pattern", "description": "零或多次。" },
+        "plus": { "$ref": "#/$defs/pattern", "description": "一或多次。" },
+        "opt": { "$ref": "#/$defs/pattern", "description": "零或一次。" }
+      }
+    },
+    "production": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "rhs"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "左部（非终结符名）。"
+        },
+        "rhs": { "$ref": "#/$defs/expression" }
+      }
+    },
+    "expression": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "maxProperties": 1,
+      "description": "结构化的表达式对象，只写一个键：rule / token / literal / seq / alt / star / plus / opt。",
+      "properties": {
+        "rule": { "type": "string", "minLength": 1, "description": "非终结符，必须存在同名产生式。" },
+        "token": { "type": "string", "minLength": 1, "description": "词法类别，必须是 rules[].name。" },
+        "literal": { "type": "string", "minLength": 1, "description": "字面量终结符，按 token 原文匹配。" },
+        "seq": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/expression" },
+          "description": "连接；空数组即 ε。"
+        },
+        "alt": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/expression" },
+          "description": "选择。"
+        },
+        "star": { "$ref": "#/$defs/expression", "description": "零或多次。" },
+        "plus": { "$ref": "#/$defs/expression", "description": "一或多次。" },
+        "opt": { "$ref": "#/$defs/expression", "description": "零或一次。" }
+      }
+    }
+  }
+}

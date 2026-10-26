@@ -1,0 +1,42 @@
+{
+  "$schema": "../schema/config.schema.json",
+  "version": 2,
+  "rules": [
+    { "name": "space", "pattern": { "plus": { "chars": "\\s" } }, "skip": true },
+    {
+      "name": "name",
+      "pattern": {
+        "seq": [{ "literal": "/" }, { "star": { "chars": "a-zA-Z0-9" } }]
+      }
+    },
+    { "name": "number", "pattern": { "plus": { "chars": "0-9" } } },
+    { "name": "operator", "pattern": { "regex": "[^\\s()<>\\[\\]{}\\/%]+" } }
+  ],
+  "grammar": {
+    "start": "program",
+    "productions": [
+      { "name": "program", "rhs": { "star": { "rule": "value" } } },
+      {
+        "name": "value",
+        "rhs": {
+          "alt": [
+            { "token": "number" },
+            { "token": "name" },
+            { "rule": "procedure" },
+            { "token": "operator" }
+          ]
+        }
+      },
+      {
+        "name": "procedure",
+        "rhs": {
+          "seq": [
+            { "literal": "{" },
+            { "star": { "rule": "value" } },
+            { "literal": "}" }
+          ]
+        }
+      }
+    ]
+  }
+}

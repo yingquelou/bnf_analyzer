@@ -1,0 +1,51 @@
+{
+  "$schema": "../schema/config.schema.json",
+  "version": 2,
+  "rules": [
+    { "name": "comment", "pattern": { "regex": "%[^\\n]*" }, "skip": true },
+    { "name": "space", "pattern": { "plus": { "chars": "\\s" } }, "skip": true },
+    { "name": "string", "pattern": { "regex": "(?s)\\((?:[^()\\\\]|\\\\.|\\([^()\\\\]*\\))*\\)" } },
+    { "name": "hexstring", "pattern": { "regex": "(?s)<[0-9A-Fa-f\\s]*>" } },
+    { "name": "immediate", "pattern": { "regex": "//[^\\s()<>\\[\\]{}\\/%]*" }, "priority": 30 },
+    { "name": "name", "pattern": { "regex": "/[^\\s()<>\\[\\]{}\\/%]*" }, "priority": 20 },
+    { "name": "number", "pattern": { "regex": "[-+]?(?:\\d+#[0-9A-Za-z]+|\\d+\\.\\d*|\\.\\d+|\\d+)" }, "priority": 10 },
+    { "name": "boolean", "pattern": { "alt": [{ "literal": "true" }, { "literal": "false" }] }, "priority": 5 },
+    { "name": "operator", "pattern": { "regex": "[^\\s()<>\\[\\]{}\\/%]+" } }
+  ],
+  "grammar": {
+    "start": "program",
+    "productions": [
+      { "name": "program", "rhs": { "star": { "rule": "value" } } },
+      {
+        "name": "value",
+        "rhs": {
+          "alt": [
+            { "token": "number" },
+            { "token": "boolean" },
+            { "token": "string" },
+            { "token": "hexstring" },
+            { "token": "name" },
+            { "token": "immediate" },
+            { "token": "operator" },
+            { "rule": "procedure" },
+            { "rule": "array" },
+            { "rule": "dictionary" }
+          ]
+        }
+      },
+      {
+        "name": "procedure",
+        "rhs": { "seq": [{ "literal": "{" }, { "star": { "rule": "value" } }, { "literal": "}" }] }
+      },
+      {
+        "name": "array",
+        "rhs": { "seq": [{ "literal": "[" }, { "star": { "rule": "value" } }, { "literal": "]" }] }
+      },
+      {
+        "name": "dictionary",
+        "rhs": { "seq": [{ "literal": "<<" }, { "star": { "rule": "entry" } }, { "literal": ">>" }] }
+      },
+      { "name": "entry", "rhs": { "seq": [{ "token": "name" }, { "rule": "value" }] } }
+    ]
+  }
+}

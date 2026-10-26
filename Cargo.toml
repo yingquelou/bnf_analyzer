@@ -1,0 +1,71 @@
+[package]
+name = "analyzer"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "analyzer"
+
+# 默认只给 core：词法 + 文法 + Earley + 值 + 访问者。
+# JSON 配置与命令行可执行文件都要显式启用：
+#   cargo add analyzer                 # 只有 core
+#   cargo add analyzer --features json # 追加 JSON 配置加载
+#   cargo add analyzer --features cli  # 追加 `analyzer` 可执行文件
+#
+# 注意：json 不引入任何外部 JSON 库——JSON 文法是用本 crate 自己写的。
+[features]
+default = ["core"]
+core = []
+json = ["core"]
+cli = ["json"]
+
+[dependencies]
+# 唯一的第三方依赖：正则引擎。错误类型、JSON 读写都由本 crate 自己实现，
+# core 也不引用 crate 里 core 以外的任何模块。
+regex = "1.13.1"
+
+[[bin]]
+name = "analyzer"
+path = "src/main.rs"
+required-features = ["cli"]
+
+# actions 与 core_isolation 属于 core；其余集成测试用到内置 postscript.json 或 Config，
+# 跟着 json feature 走。
+[[test]]
+name = "actions"
+path = "tests/actions.rs"
+
+# core 的自包含约束（只允许 regex，不引用兄弟模块），默认 feature 下就跑。
+[[test]]
+name = "core_isolation"
+path = "tests/core_isolation.rs"
+
+# 文档分家：docs/user 与 docs/dev 的目录形状、rustdoc 装配、失效旧路径。
+[[test]]
+name = "docs_layout"
+path = "tests/docs_layout.rs"
+
+# 代码用英文、注释用中文：非注释部分不许出现 CJK。
+[[test]]
+name = "code_language"
+path = "tests/code_language.rs"
+
+[[test]]
+name = "analyzer"
+path = "tests/analyzer.rs"
+required-features = ["json"]
+
+[[test]]
+name = "config_forms"
+path = "tests/config_forms.rs"
+required-features = ["json"]
+
+[[test]]
+name = "grammar_forms"
+path = "tests/grammar_forms.rs"
+required-features = ["json"]
+
+[[test]]
+name = "visitor"
+path = "tests/visitor.rs"
+required-features = ["json"]
