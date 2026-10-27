@@ -102,7 +102,8 @@ jobs:
           if cargo publish 2>&1 | tee "$log"; then
             exit 0
           fi
-          if grep -q "already uploaded" "$log"; then
+          # 新版 cargo 说 "already exists on crates.io index"，旧版说 "already uploaded"。
+          if grep -Eq "already uploaded|already exists on crates.io" "$log"; then
             echo "::warning::this version is already on crates.io; treating the release as published"
             exit 0
           fi
