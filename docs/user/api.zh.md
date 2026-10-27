@@ -433,6 +433,72 @@ document.accept(&mut sums);
 assert_eq!(sums.0, [6], "the Int at the root is visited too");
 ```
 
+### 5.5 两遍式分析：结构归解析，条件归复查
+
+有的条件**不是任何单点的形状**能表达的："`use` 引用的名字必须已经 `def` 过"、
+"同一个过程里不许重复定义"——判断依据是整份文档的信息（符号表、定义顺序、重复性）。
+这类条件既不该塞给 `priority`（那是同长度竞争的胜负手），也不适合硬放进动作
+（归约时动作只看到自己的参数）。推荐的模式是**两遍**：第一遍解析出树并收集定义，
+第二遍带着收集到的信息复查使用，把违规点连同位置聚成一份诊断列表。
+
+```rust
+use bnf_analyzer::core::grammar::{Expr, Grammar};
+use bnf_analyzer::core::rules::{Rule, Rules};
+use bnf_analyzer::core::semantics::Semantics;
+use bnf_analyzer::core::Analyzer;
+
+let rules = Rules::from_rules(vec![
+    Rule::skipping_regex("space", r"\s+"),
+    Rule::regex("name", r"[a-z]+"),
+    Rule::regex("number", r"\d+"),
+])
+.expect("the rules should be valid");
+let grammar = Grammar::builder()
+    .start("program")
+    .production("program", Expr::plus(Expr::rule("statement")))
+    .production("statement", Expr::alt([Expr::rule("def"), Expr::rule("use")]))
+    .production("def", Expr::seq([
+        Expr::literal("def"),
+        Expr::token("name"),
+        Expr::token("number"),
+    ]))
+    .production("use", Expr::seq([Expr::literal("use"), Expr::token("name")]))
+    .build()
+    .expect("the grammar should be valid");
+let document = Analyzer::new(rules, grammar, Semantics::new())
+    .expect("the configuration should be consistent")
+    .analyze("def width 10 use width use height")
+    .expect("analysis should succeed");
+
+// 第一遍：收集全部定义过的名字。
+let mut defined = std::collections::HashSet::new();
+for node in document.rules_named("def") {
+    if let Some(token) = node.children[1].as_token() {
+        defined.insert(token.text.as_str());
+    }
+}
+
+// 第二遍：带着定义表复查每个使用。
+let mut undefined = Vec::new();
+for node in document.rules_named("use") {
+    let Some(token) = node.children[1].as_token() else { continue };
+    if !defined.contains(token.text.as_str()) {
+        undefined.push(token.text.as_str());
+    }
+}
+assert_eq!(undefined, ["height"], "only height is never defined");
+```
+
+两遍不依赖先后：`use` 完全可以出现在 `def` 之前，收集完成后复查自然覆盖全部使用。
+token 上带着 `Span`，把名字换成 `&Token` 就能得到 `(名字, 行, 列)`，正适合 IDE 的
+诊断面板或批量报告——比动作 `Err` 的"第一个错误即中断"友好得多。
+
+注意分工：**解析器只回答"结构对不对"**（`use height` 是合法语句，哪怕 `height`
+从未定义）；"条件对不对"由你的复查代码回答。这与 Rust 编译器的分层一致——解析是
+纯 CFG，名字解析在后面。"条件不满足就换一种解析"的语义谓词（ANTLR 的 `{...}?`）
+是刻意不提供的：谓词依赖语义值会破坏 Earley 的复杂度与确定性假设；绝大多数场景下，
+"解析 + 两遍复查"就是标准解法。
+
 **怎么选**：只想"看一眼每个值"用 `walk`；要剪枝、要后序、要把节点引用带出来、
 要区分节点与叶子，用 `accept` + `Visitor`。
 

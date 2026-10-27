@@ -439,6 +439,77 @@ document.accept(&mut sums);
 assert_eq!(sums.0, [6], "the Int at the root is visited too");
 ```
 
+### 5.5 Two-pass analysis: structure to the parser, conditions to a second pass
+
+Some conditions cannot be expressed by any single local shape: "a `use` must reference a name that
+was already `def`-ined", "no duplicate definitions inside one procedure" — the decision needs
+information from the whole document (a symbol table, definition order, duplicates). Such conditions
+belong neither in `priority` (that decides same-length competition) nor in an action (a reduction
+only sees its own arguments). The recommended pattern is **two passes**: parse into a tree and
+collect the definitions, then check every use against what was collected, aggregating violations
+with their positions into one diagnostic list.
+
+```rust
+use bnf_analyzer::core::grammar::{Expr, Grammar};
+use bnf_analyzer::core::rules::{Rule, Rules};
+use bnf_analyzer::core::semantics::Semantics;
+use bnf_analyzer::core::Analyzer;
+
+let rules = Rules::from_rules(vec![
+    Rule::skipping_regex("space", r"\s+"),
+    Rule::regex("name", r"[a-z]+"),
+    Rule::regex("number", r"\d+"),
+])
+.expect("the rules should be valid");
+let grammar = Grammar::builder()
+    .start("program")
+    .production("program", Expr::plus(Expr::rule("statement")))
+    .production("statement", Expr::alt([Expr::rule("def"), Expr::rule("use")]))
+    .production("def", Expr::seq([
+        Expr::literal("def"),
+        Expr::token("name"),
+        Expr::token("number"),
+    ]))
+    .production("use", Expr::seq([Expr::literal("use"), Expr::token("name")]))
+    .build()
+    .expect("the grammar should be valid");
+let document = Analyzer::new(rules, grammar, Semantics::new())
+    .expect("the configuration should be consistent")
+    .analyze("def width 10 use width use height")
+    .expect("analysis should succeed");
+
+// Pass one: collect every defined name.
+let mut defined = std::collections::HashSet::new();
+for node in document.rules_named("def") {
+    if let Some(token) = node.children[1].as_token() {
+        defined.insert(token.text.as_str());
+    }
+}
+
+// Pass two: re-check every use against the definition table.
+let mut undefined = Vec::new();
+for node in document.rules_named("use") {
+    let Some(token) = node.children[1].as_token() else { continue };
+    if !defined.contains(token.text.as_str()) {
+        undefined.push(token.text.as_str());
+    }
+}
+assert_eq!(undefined, ["height"], "only height is never defined");
+```
+
+The two passes do not depend on order: a `use` may well appear before its `def`; once the collection
+pass is done, the check covers every use. Tokens carry a `Span`, so collecting `&Token` instead of
+names gives you `(name, line, column)` — exactly what an IDE diagnostics panel or a batch report
+wants, and friendlier than an action `Err`, which stops at the first violation.
+
+Note the division of labor: **the parser only answers "is the structure valid"** (`use height` is a
+valid statement even if `height` is never defined); "is the condition satisfied" is answered by your
+second pass. This mirrors how the Rust compiler is layered — parsing is a pure CFG, name resolution
+comes afterwards. A semantic predicate that would "pick a different parse when the condition fails"
+(ANTLR's `{...}?`) is deliberately not provided: predicates depending on semantic values break
+Earley's complexity and determinism assumptions. For the overwhelming majority of cases, "parse plus
+a second pass" is the standard solution.
+
 **Which one to pick**: for "just look at every value" use `walk`; for pruning, post-order work, carrying node
 references out, or telling nodes from leaves, use `accept` + `Visitor`.
 
