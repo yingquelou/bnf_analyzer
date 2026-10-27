@@ -254,7 +254,7 @@ $ cargo test --no-default-features    # 确认 core 不靠 json 也能活（与�
 | 错误消息 / CLI 输出 | `docs/user/cli.zh.md` §1 的帮助与 §3 的错误样例、`docs/user/config.zh.md` §7/§9 的文案与对照表、断言里 `contains("…")` 检查的片段 |
 | 输出格式 | `src/json/write.rs`、`docs/user/cli.zh.md` §2 的样例、`tests/analyzer.rs` |
 | 模块结构 | 本文 §2 的树、`src/core/mod.rs` 的分文件说明、`tests/core_isolation.rs` 的清单 |
-| 发布相关（版本号、标签、CI 检查项） | `Cargo.toml` 的 `version`、`[package.metadata.docs.rs]`、`.github/workflows/{ci,release}.yml`、README「发布」节 |
+| 发布相关（版本号、标签、CI 检查项） | `Cargo.toml` 的 `version`、`[package.metadata.docs.rs]`、`.github/workflows/{ci,release}.yml`、本文 §8 |
 
 判断标准很简单：**能跑绿的测试 + 能编译的文档**，缺一条都算没改完。
 
@@ -271,3 +271,30 @@ $ cargo clippy --all-targets --all-features
 
 Windows 上增量编译偶尔会报 `os error 5`（删不掉旧的 `.lock`）：加 `CARGO_INCREMENTAL=0`
 重跑即可，不是代码问题。
+
+## 8. 发布与 CI
+
+
+README 面向使用者，不写这些；本节是发布流程的唯一底本。
+
+**首次发布手动**：`cargo login` → `cargo publish` → `git tag v0.1.0 && git push origin v0.1.0`。
+之后每次发版只打标签，交给 `.github/workflows/release.yml`：
+
+1. 改 `Cargo.toml` 的 `version`，`cargo test --all-features` 通过后提交；
+2. `git tag v0.1.1 && git push origin v0.1.1`；
+3. 流水线校验「标签 = `Cargo.toml` 版本」→ 跑测试 → `cargo doc` 零警告 → `cargo publish` →
+   建 GitHub Release 并附上 `.crate`。
+
+发布作业是**可重跑**的：`cargo publish` 遇到 "already uploaded"（给老版本补 Release、重跑流水线）
+输出 warning 并按成功退出；建 Release 前先 `gh release view` 查重。不要用 `cargo info` 预检
+"是否已发布"——它优先解析本地工作区，永远返回"已经存在"，会把发布全挡住。
+
+一次性配置：仓库 Settings → Secrets and variables → Actions 新建 `CARGO_REGISTRY_TOKEN`
+（crates.io 的 API token，权限只勾 `publish-new` 与 `publish-update`）。也可以改用 crates.io 的
+Trusted Publishing（OIDC，无需存 token）：把 publish 步骤换成 `rust-lang/crates-io-auth-action`
+取 token，并给作业加 `id-token: write` 权限。
+
+`.github/workflows/ci.yml` 在 PR 与 `master` 推送上跑三种 feature 组合
+（默认 / `--all-features` / `--no-default-features`）、clippy 与 rustdoc。本仓库不是 rustfmt
+默认风格，所以 CI 不设 `cargo fmt --check` 这道闸。docs.rs 那边由
+`[package.metadata.docs.rs] all-features = true` 保证 json / cli 的手册页也构建出来。

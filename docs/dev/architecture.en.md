@@ -271,7 +271,7 @@ names the Chinese file only; the English one has the same section and the same t
 | error messages / CLI output | the help in `docs/user/cli.zh.md` §1 and the error samples in §3, the wording and reference table in `docs/user/config.zh.md` §7/§9, the fragments asserted with `contains("…")` |
 | the output format | `src/json/write.rs`, the samples in `docs/user/cli.zh.md` §2, `tests/analyzer.rs` |
 | the module structure | the tree in §2 here, the per-file notes in `src/core/mod.rs`, the list in `tests/core_isolation.rs` |
-| anything release-related (version, tags, CI checks) | `version` in `Cargo.toml`, `[package.metadata.docs.rs]`, `.github/workflows/{ci,release}.yml`, the release section of `README.md` |
+| anything release-related (version, tags, CI checks) | `version` in `Cargo.toml`, `[package.metadata.docs.rs]`, `.github/workflows/{ci,release}.yml`, §8 here |
 
 The criterion is simple: **tests that run green + docs that compile**. Missing either one means the change is not
 finished.
@@ -289,3 +289,33 @@ $ cargo clippy --all-targets --all-features
 
 On Windows, incremental compilation occasionally reports `os error 5` (it cannot delete an old `.lock`): rerun with
 `CARGO_INCREMENTAL=0`, it is not a code problem.
+
+## 8. Release and CI
+
+
+The README is written for users and does not cover any of this; this section is the single source of
+truth for the release process.
+
+**The first release is manual**: `cargo login` → `cargo publish` → `git tag v0.1.0 && git push origin v0.1.0`.
+After that, a release is just a tag, handled by `.github/workflows/release.yml`:
+
+1. bump `version` in `Cargo.toml`, make sure `cargo test --all-features` passes, commit;
+2. `git tag v0.1.1 && git push origin v0.1.1`;
+3. the pipeline checks that the tag equals the `Cargo.toml` version → runs the tests → builds rustdoc
+   warning-free → `cargo publish` → creates a GitHub Release with the `.crate` attached.
+
+The publish job is **re-runnable**: when `cargo publish` reports "already uploaded" (backfilling a
+Release for an old version, re-running the pipeline), it prints a warning and exits successfully; and the
+GitHub release step checks `gh release view` first. Do not pre-check "is this version published" with
+`cargo info` — it resolves the local workspace first and always reports "already exists", blocking every
+release.
+
+One-time setup: repo Settings → Secrets and variables → Actions, create `CARGO_REGISTRY_TOKEN`
+(a crates.io API token with only `publish-new` and `publish-update` scopes). Alternatively switch to
+crates.io Trusted Publishing (OIDC, no stored token): replace the publish step with
+`rust-lang/crates-io-auth-action` and add `id-token: write` to the job.
+
+`.github/workflows/ci.yml` runs on PRs and pushes to `master`: the three feature combinations
+(default / `--all-features` / `--no-default-features`), clippy, and rustdoc. This repository does not
+follow rustfmt's default style, so CI deliberately has no `cargo fmt --check` gate. On docs.rs,
+`[package.metadata.docs.rs] all-features = true` makes sure the json / cli manual pages get built too.
