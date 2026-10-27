@@ -90,7 +90,9 @@ jobs:
             exit 1
           fi
 
-      # cargo publish 会把 .crate 留在 target/package/，下一步直接拿它当发布附件。
+      # `cargo publish` 自己打的包不保证留在 `target/package`：新版 cargo 发布成功后会清掉
+      # 打包产物，Release 步骤再去 glob 就"一个文件都没匹配到"。所以先显式打包、复制到
+      # `dist/`，发布时 cargo 会自己再做一遍校验编译——附件内容与上传到 crates.io 的一致。
       # 版本已在 crates.io 上（比如给老版本补 Release、重跑流水线）不视为失败；
       # 不要用 `cargo info` 预检：它优先解析本地工作区，永远返回“已经存在”，会把发布全挡住。
       - name: Publish
@@ -98,6 +100,10 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           set -uo pipefail
+          cargo package --no-verify
+          mkdir -p dist
+          cp target/package/*.crate dist/
+          ls -l dist
           log=$(mktemp)
           if cargo publish 2>&1 | tee "$log"; then
             exit 0
@@ -111,17 +117,18 @@ jobs:
 
       # 若上一步已成功、这一步失败（例如 Releases 权限不足），重跑整条流水线会被
       # "version already published" 挡住——publish 步骤已对这种情况容错，本步骤查重后
-      # 也可以安全重跑。
+      # 也可以安全重跑。附件用 `dist/` 里的显式路径，不再依赖 `target/package` 里的残留。
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
             echo "release ${GITHUB_REF_NAME} already exists; nothing to do"
-          else
-            gh release create "${GITHUB_REF_NAME}" \
-              target/package/bnf_analyzer-*.crate \
-              --verify-tag \
-              --title "${GITHUB_REF_NAME}" \
-              --generate-notes
+            exit 0
           fi
+          asset=$(ls dist/*.crate)
+          gh release create "${GITHUB_REF_NAME}" "$asset" \
+            --verify-tag \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes
