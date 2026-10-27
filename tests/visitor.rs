@@ -3,11 +3,11 @@
 //! 单元测试（`src/visit.rs`）用手搭的 `Value`，这里一律用内置配置装配出的分析器
 //! 真跑一遍 PostScript 片段，避免"遍历器对了但树长得不一样"。
 
-use analyzer::core::{Analyzer, Document};
-use analyzer::core::tokenizer::Token;
-use analyzer::core::value::{RuleNode, Value};
-use analyzer::core::visit::{Flow, Visitor};
-use analyzer::json::Config;
+use bnf_analyzer::core::{Analyzer, Document};
+use bnf_analyzer::core::tokenizer::Token;
+use bnf_analyzer::core::value::{RuleNode, Value};
+use bnf_analyzer::core::visit::{Flow, Visitor};
+use bnf_analyzer::json::Config;
 
 /// 内置配置装配出来的分析器。
 fn builtin() -> Analyzer {
@@ -233,9 +233,9 @@ fn collectors_agree_with_walk() {
 
 #[test]
 fn visits_action_results_not_only_syntax_trees() {
-    use analyzer::core::grammar::{Expr, Grammar};
-use analyzer::core::rules::{Rule, Rules};
-use analyzer::core::semantics::Semantics;
+    use bnf_analyzer::core::grammar::{Expr, Grammar};
+use bnf_analyzer::core::rules::{Rule, Rules};
+use bnf_analyzer::core::semantics::Semantics;
 
     #[derive(Default)]
     struct Numbers {
@@ -307,7 +307,7 @@ use analyzer::core::semantics::Semantics;
 fn visitors_can_borrow_nodes_out_of_the_document() {
     // 访问者能把 &'ast RuleNode 存下来，说明它不要求回调内就把数据抄走。
     struct Keep<'ast> {
-        spans: Vec<analyzer::core::tokenizer::Span>,
+        spans: Vec<bnf_analyzer::core::tokenizer::Span>,
         first: Option<&'ast RuleNode>,
     }
 

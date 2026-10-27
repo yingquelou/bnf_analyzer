@@ -2,10 +2,10 @@
 //!
 //! 这里只通过公开 API 使用，覆盖内置配置、自定义配置、错误定位与 JSON 输出。
 
-use analyzer::core::{AnalyzeError, Analyzer};
-use analyzer::core::parser::ParseError;
-use analyzer::core::value::Value;
-use analyzer::json::Config;
+use bnf_analyzer::core::{AnalyzeError, Analyzer};
+use bnf_analyzer::core::parser::ParseError;
+use bnf_analyzer::core::value::Value;
+use bnf_analyzer::json::Config;
 
 /// 内置 PostScript 配置装配出来的分析器（配置是配置文件的事，不是分析器的入口）。
 fn builtin() -> Analyzer {

@@ -12,8 +12,8 @@
 //! [`Analyzer`](crate::core::Analyzer) 复用。
 //!
 //! ```
-//! use analyzer::core::semantics::Semantics;
-//! use analyzer::core::value::Value;
+//! use bnf_analyzer::core::semantics::Semantics;
+//! use bnf_analyzer::core::value::Value;
 //!
 //! let semantics = Semantics::new()
 //!     .token("number", |token| {

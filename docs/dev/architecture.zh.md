@@ -2,7 +2,7 @@
 
 面向**开发这个 crate 的人**：分层怎么切、约束靠什么钉住、改一处要同步哪些地方。
 使用这个库的问题（怎么写文法、怎么挂动作、命令行怎么跑）不在本文，
-见 `docs/user/` 下的四份手册；文法内部怎么落地见 `docs/dev/internals.md`。
+见 `docs/user/` 下的四份手册；文法内部怎么落地见 `docs/dev/internals.zh.md`。
 
 ---
 
@@ -14,12 +14,12 @@
 |---|---|---|
 | `core`（默认） | 词法、文法、Earley、`Value`、访问者、`Analyzer::new` | `regex` |
 | `json` | 自举的 JSON 文法（解析 + 输出）、`Config`（含内置配置）、`Analyzer::from_config` | `core` |
-| `cli` | `analyzer` 可执行文件（`src/main.rs`） | `json` |
+| `cli` | `bnf-analyzer` 可执行文件（`src/main.rs`） | `json` |
 
 ```text
-cargo add analyzer                  # 只有 core，不拉 JSON 库，也不产出可执行文件
-cargo add analyzer --features json  # 追加配置加载
-cargo add analyzer --features cli   # 追加可执行文件
+cargo add bnf_analyzer                 # 只有 core，不拉 JSON 库，也不产出可执行文件
+cargo add bnf_analyzer --features json # 追加配置加载
+cargo add bnf_analyzer --features cli  # 追加可执行文件
 ```
 
 关键性质：**`json` 层不是"引入了一个 JSON 库"，而是"用 core 写的一个应用"**。
@@ -56,9 +56,16 @@ src/
     analyzer.rs    #   impl Analyzer：from_config
     error.rs       #   JsonError（位置 + 说明）
     tests.rs       #   单元测试
-  guide.rs         # 文档装配：include_str! 把 docs/ 引进 rustdoc
+  guide.rs         # 文档装配：include_str! 把 docs/ 引进 rustdoc（中英两份 + 切换器）
   lib.rs           # crate 文档 + 模块声明（不 re-export 任何名字）
   main.rs          # cli
+docs/
+  README.md         # 索引（只给人看，不进 rustdoc）
+  intro.{zh,en}.md  # crate 根页正文
+  guide.{zh,en}.md  # `guide` 模块页正文
+  user/{api,grammar,config,cli}.{zh,en}.md      # 用户手册，两份成对
+  dev/{architecture,internals}.{zh,en}.md       # 开发者手册，两份成对
+  theme/switcher.html                           # 每页末尾的语言切换器（按钮 + 样式 + 脚本）
 tests/
   actions.rs         # 动作：缓存、错误、键
   analyzer.rs        # 两条入口的集成行为
@@ -76,7 +83,7 @@ examples/
 
 `analyzer` / `document` / `error` 三个门面文件是**私有**子模块，只以 `core::X` 的形式导出；
 引擎模块（`grammar` … `visit`）是 `pub mod`，各管一个环节。所以公共路径只有
-`analyzer::core::…` 一种写法，crate 根上不出现任何名字（§3.3）。
+`bnf_analyzer::core::…` 一种写法，crate 根上不出现任何名字（§3.3）。
 
 `core` 内部**只有一条从词法到结果的直线**：`Rules` → `Tokenizer` → `Parser`(Earley) →
 `Document`/`Value`，`Semantics` 挂在 token 与归约两个点上，`visit` 在结果之上。
@@ -102,7 +109,7 @@ examples/
 
 crate 根**只声明模块，不 re-export**：`Grammar`、`Value`、`Rule`、`Config` 这类名字太常见，
 库不替使用者占位，同一个类型也不会在文档里挂两个路径。要短名由使用方自己
-`use analyzer::core as ak;` 或 `use analyzer::core::value::Value;`。
+`use bnf_analyzer::core as ak;` 或 `use bnf_analyzer::core::value::Value;`。
 
 `core` 门口也只有四个类型（`Analyzer`、`Document`、`AnalyzeError`、`SetupError`）和八个模块；
 多一个都要先改测试，等于强制过一次"它到底该住哪层"的讨论。
@@ -112,8 +119,10 @@ crate 根**只声明模块，不 re-export**：`Grammar`、`Value`、`Rule`、`C
 ### 3.4 代码英文、注释中文
 
 代码里的每一个字符串都是**产物**——错误消息、CLI 帮助、断言描述——统一写英文；
-注释面向维护者，保持中文。不做本地化：多语言文案对这个库没有价值，一旦引入就要维护
-两套消息、两套测试断言。
+注释面向维护者，保持中文。产物**不做本地化**：多语言消息要维护两套断言，也不会让谁多得到一点信息。
+
+文档是另一回事：手册中英双份、页内切换（§4），两种语言都由 `cargo test --doc` 当真测试跑。
+分界的判据还是「读者是谁」——运行时输出只服务一种形态，手册要照顾两种读者。
 
 判据是「非注释部分不得出现 CJK」：`//`、`//!`、`///`、`/* … */` 之外，代码与字符串
 字面量里只要有一个汉字（含全角标点）就红。`tests/code_language.rs` 逐字符扫描
@@ -124,18 +133,57 @@ crate 根**只声明模块，不 re-export**：`Grammar`、`Value`、`Rule`、`C
 
 ---
 
-## 4. 文档装配
+## 4. 文档装配：中英双份 + 页内切换
 
-仓库里的 Markdown 是**唯一底本**，`src/guide.rs` 用 `include_str!` 把它们挂进 rustdoc：
+仓库里的 Markdown 是**唯一底本**，每种语言一份，由 `src/guide.rs` 的 `manual!` 宏挂进 rustdoc：
 
 | 读者 | rustdoc 路径 | 文件 | feature |
 |---|---|---|---|
-| 使用者 | `guide::user::api` | `docs/user/api.md` | `json` |
-| 使用者 | `guide::user::grammar` | `docs/user/grammar.md` | 无（core 即可） |
-| 使用者 | `guide::user::cli` | `docs/user/cli.md` | `json` |
-| 使用者 | `guide::user::config` | `docs/user/config.md` | `json` |
-| 开发者 | `guide::dev::architecture` | `docs/dev/architecture.md` | 无 |
-| 开发者 | `guide::dev::internals` | `docs/dev/internals.md` | 无 |
+| 使用者 | crate 根 | `docs/intro.{zh,en}.md` | 无 |
+| 使用者 | `guide` | `docs/guide.{zh,en}.md` | 无 |
+| 使用者 | `guide::user::api` | `docs/user/api.{zh,en}.md` | `json` |
+| 使用者 | `guide::user::grammar` | `docs/user/grammar.{zh,en}.md` | `json` |
+| 使用者 | `guide::user::cli` | `docs/user/cli.{zh,en}.md` | `json` |
+| 使用者 | `guide::user::config` | `docs/user/config.{zh,en}.md` | `json` |
+| 开发者 | `guide::dev::architecture` | `docs/dev/architecture.{zh,en}.md` | 无 |
+| 开发者 | `guide::dev::internals` | `docs/dev/internals.{zh,en}.md` | 无 |
+
+装法是固定三件套，`manual!("user/api")` 展开成这样：
+
+```text
+concat!(
+    "<div class=\"lang\" data-lang=\"zh\">\n\n",
+    include_str!("../docs/user/api.zh.md"),
+    "\n</div>\n\n<div class=\"lang\" data-lang=\"en\">\n\n",
+    include_str!("../docs/user/api.en.md"),
+    "\n</div>\n\n",
+    include_str!("../docs/theme/switcher.html"),
+)
+```
+
+两份正文在**同一个页面**里，`docs/theme/switcher.html` 只做三件事：
+
+1. 右下角一个固定的 `中文` / `English` 按钮组；
+2. 两条 CSS 决定显示哪份：`html:not([data-lang="en"]) [data-lang="en"] { display: none }` 与
+   `html[data-lang="en"] [data-lang="zh"] { display: none }`——还没写 `data-lang` 时按中文处理，不会先闪一下英文；
+3. 一段脚本：把 localStorage 里记住的选择写回 `<html data-lang>`，并把侧边栏目录（`#rustdoc-toc`）里
+   另一种语言的条目打上 `hidden`，否则两种语言的标题会在目录里各列一遍。
+
+`switcher.html` 里 `<style>` 与 `<script>` 内部**不留空行**：CommonMark 的空行会截断 HTML 块，
+剩下的部分按 Markdown 段落处理——CSS 里的 `--` 会被替换成 en dash，样式直接失效（`cargo doc` 会给出
+`nested Markdown paragraph in HTML style tag` 警告）。
+
+为什么不跳页而是页内切换：`cargo doc` 只产出一棵树，两套文档就意味着两棵树、两套搜索索引、两套相对链接；
+页内切换不跳页、不改地址、锚点还在原页，代价只是同一页 HTML 里放两份正文。
+
+crate 根（`src/lib.rs`）与 `guide` 页（`src/guide.rs`）各自手写一遍同样的 `concat!`：
+`#![doc = …]` 是内层属性，必须排在 `macro_rules!` 之前，那里用不了 `manual!`。
+
+**覆盖范围**：挂了 `manual!` 的 8 个页面整页双语；条目级 `///`（`Value::text` 这类）仍是中文，
+那些页面没有切换器，也就不会出现"按了没反应"的按钮。
+
+**doctest 是双份的**：两份正文里的 Rust 代码块都会被 `cargo test --doc` 编译并运行，所以改 API 要同时改两种语言；
+`tests/docs_layout.rs` 还会比对两份的代码块数量，漏译一个示例就红。
 
 这样做不只是少写一份：文档里的 Rust 代码块是 **doctest**，`cargo test --doc` 会真的编译并运行。
 API 改名、返回类型变化、行为调整都会先让文档变红，而不是让读者先踩坑。
@@ -149,23 +197,24 @@ rustdoc 本身也分界：crate 根与各模块开头的 `//!` / `///` 面向**�
 
 - **`docs/user/` 面向使用者**：只写 `pub` 面——公开入口、公开类型、公开行为、错误与边界。
   读者不需要知道实现，所以这里不出现 `src/` 路径、`tests/` 名字、`$starN` / `is_synthetic` /
-  `from_exprs` 这类内部标识。写配置的人要的键表在 `docs/user/config.md`，
-  写 Rust 的人要的 API 在 `docs/user/api.md`。
+  `from_exprs` 这类内部标识。写配置的人要的键表在 `docs/user/config.zh.md`，
+  写 Rust 的人要的 API 在 `docs/user/api.zh.md`。
 - **`docs/dev/` 面向本 crate 的开发者**：分层、模块、约束、糖怎么降级、测试怎么排、
   改一处要同步哪些文件。这里可以并且应该谈内部标识。
 
-`tests/docs_layout.rs` 钉住这个形状：`docs/` 下只允许 `README.md` + `user/` + `dev/`；
-六份手册与 `guide.rs` 的 `include_str!` 一一对应；`docs/user/` 里不许出现内部标识；
-仓库里也不许再出现上一版的路径（平铺手册、或 `dev/` 下的 api/grammar 位置）。
+`tests/docs_layout.rs` 钉住这个形状：`docs/` 顶层只允许 `README.md` + `intro.*.md` + `guide.*.md` + `user/` +
+`dev/` + `theme/`；八份底本成对（`X.zh.md` 必有 `X.en.md`，反之亦然，中文那份必须含 CJK、英文那份不许含），
+两份代码块数量一致；每份底本都能在 `src/lib.rs` / `src/guide.rs` 里找到装配入口；`docs/user/` 里不许出现内部标识；
+仓库里也不许再出现上一版的路径（平铺手册、`dev/` 下的 api/grammar 位置，或没有语言后缀的 `docs/user/<名字>.md`）。
 
 ---
 
 ## 5. 测试矩阵
 
 ```text
-$ cargo test                          # core：49 个单元测试 + actions + code_language + core_isolation + docs_layout + 10 项文档示例（共 82 项）
-$ cargo test --all-features           # 追加 json / cli 的全部内容（共 181 项）
-$ cargo test --all-features --doc     # 只跑文档里的示例（30 项）
+$ cargo test                          # core：49 个单元测试 + actions + code_language + core_isolation + docs_layout + 12 项文档示例（共 88 项）
+$ cargo test --all-features           # 追加 json / cli 的全部内容（共 205 项）
+$ cargo test --all-features --doc     # 只跑文档里的示例（50 项，中英各一份）
 $ cargo test --no-default-features    # 确认 core 不靠 json 也能活（与默认等价）
 ```
 
@@ -176,12 +225,12 @@ $ cargo test --no-default-features    # 确认 core 不靠 json 也能活（与�
 | `src/core/tests.rs`、`src/json/tests.rs` | 单元级：词法裁决、Earley 归约、值树形状、序列化 |
 | `tests/actions.rs` | 动作的键、缓存、错误透传 |
 | `tests/analyzer.rs` | `Analyzer::new` 与 `from_config` 两条入口的行为一致性 |
-| `tests/grammar_forms.rs` | `docs/user/grammar.md` 每一行对照的可执行版本 |
+| `tests/grammar_forms.rs` | `docs/user/grammar.zh.md` 每一行对照的可执行版本 |
 | `tests/config_forms.rs` | schema 与代码常量 `PATTERN_KEYS` / `EXPR_KEYS` 一致、示例配置合规 |
 | `tests/visitor.rs` | `Visitor` 的 `Flow` 语义、`enter`/`leave` 配对、收集器 |
 | `tests/core_isolation.rs` | 3.1–3.3：core 自包含、依赖只有 `regex`、名字不越层 |
 | `tests/code_language.rs` | 3.4：代码英文、注释中文 |
-| `tests/docs_layout.rs` | 文档分家、rustdoc 装配、rustdoc 不指仓库路径 |
+| `tests/docs_layout.rs` | 文档分家、中英成对与代码块对称、rustdoc 装配、rustdoc 不指仓库路径 |
 
 还有一个非测试的检查：`cargo doc --all-features` 必须 0 警告。文档之间的 intra-doc link
 （比如 `crate::core::visit::Flow`）断了，这里会先红。
@@ -190,17 +239,22 @@ $ cargo test --no-default-features    # 确认 core 不靠 json 也能活（与�
 
 ## 6. 改一处要同步哪些地方
 
+下表提到的每份手册都是成对的：`X.zh.md` 与 `X.en.md` **一起改**（只改一份，`tests/docs_layout.rs` 的代码块
+数量比对与"英文那份不许出现中文"两条会先红）。下表只写出中文那份，英文那份是同一节的同一张表。
+
 | 你改了 | 必须一起改 |
 |---|---|
-| 文法 / `Expr` 的键 | `schema/config.schema.json`、`EXPR_KEYS`、`docs/user/grammar.md` 的对照表、`docs/user/config.md` 的键表、`docs/dev/internals.md` 的降级表、`tests/grammar_forms.rs` |
-| 词法 / `Pattern` 的键 | `schema/config.schema.json`、`PATTERN_KEYS`、`docs/user/grammar.md` §6、`docs/user/config.md` §3 |
-| 糖的展开 / 合成符号 | `docs/dev/internals.md` §3、`docs/user/grammar.md` §5 的"语法树里是平的"、`src/core/parser.rs` 的 expected 过滤测试 |
-| 配置字段 | `CONFIG_KEYS` / `RULE_KEYS` / `GRAMMAR_KEYS` / `PRODUCTION_KEYS`、schema、`docs/user/config.md` §1–§4 |
-| 默认配置 | `examples/postscript.json`、`docs/user/config.md` §10 的 BNF 输出、`docs/user/cli.md` 里 `--bnf` 的样例 |
-| 公开 API | `docs/user/api.md` 的示例与表格（否则 doctest 红）、`src/lib.rs` 的路径表 |
-| 错误消息 / CLI 输出 | `docs/user/cli.md` §1 的帮助与 §3 的错误样例、`docs/user/config.md` §7/§9 的文案与对照表、断言里 `contains("…")` 检查的片段 |
-| 输出格式 | `src/json/write.rs`、`docs/user/cli.md` §2 的样例、`tests/analyzer.rs` |
+| 任何一篇手册的正文 | 同一篇的另一种语言（`X.zh.md` ↔ `X.en.md`），标题层级、表格行列、代码块一一对应 |
+| 文法 / `Expr` 的键 | `schema/config.schema.json`、`EXPR_KEYS`、`docs/user/grammar.zh.md` 的对照表、`docs/user/config.zh.md` 的键表、`docs/dev/internals.zh.md` 的降级表、`tests/grammar_forms.rs` |
+| 词法 / `Pattern` 的键 | `schema/config.schema.json`、`PATTERN_KEYS`、`docs/user/grammar.zh.md` §6、`docs/user/config.zh.md` §3 |
+| 糖的展开 / 合成符号 | `docs/dev/internals.zh.md` §3、`docs/user/grammar.zh.md` §5 的"语法树里是平的"、`src/core/parser.rs` 的 expected 过滤测试 |
+| 配置字段 | `CONFIG_KEYS` / `RULE_KEYS` / `GRAMMAR_KEYS` / `PRODUCTION_KEYS`、schema、`docs/user/config.zh.md` §1–§4 |
+| 默认配置 | `examples/postscript.json`、`docs/user/config.zh.md` §10 的 BNF 输出、`docs/user/cli.zh.md` 里 `--bnf` 的样例 |
+| 公开 API | `docs/user/api.zh.md` 的示例与表格（否则 doctest 红）、`src/lib.rs` 的路径表 |
+| 错误消息 / CLI 输出 | `docs/user/cli.zh.md` §1 的帮助与 §3 的错误样例、`docs/user/config.zh.md` §7/§9 的文案与对照表、断言里 `contains("…")` 检查的片段 |
+| 输出格式 | `src/json/write.rs`、`docs/user/cli.zh.md` §2 的样例、`tests/analyzer.rs` |
 | 模块结构 | 本文 §2 的树、`src/core/mod.rs` 的分文件说明、`tests/core_isolation.rs` 的清单 |
+| 发布相关（版本号、标签、CI 检查项） | `Cargo.toml` 的 `version`、`[package.metadata.docs.rs]`、`.github/workflows/{ci,release}.yml`、README「发布」节 |
 
 判断标准很简单：**能跑绿的测试 + 能编译的文档**，缺一条都算没改完。
 

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/yingquelou/analyzer/schema/config.schema.json",
-  "title": "analyzer 配置",
-  "description": "analyzer 的配置：version + 词法规则 rules + 文法 grammar。rules[].pattern 与 grammar.productions[].rhs 一律是结构化对象，不接受字符串。",
+  "$id": "https://github.com/yingquelou/bnf_analyzer/schema/config.schema.json",
+  "title": "bnf_analyzer 配置",
+  "description": "bnf_analyzer 的配置：version + 词法规则 rules + 文法 grammar。rules[].pattern 与 grammar.productions[].rhs 一律是结构化对象，不接受字符串。",
   "type": "object",
   "additionalProperties": false,
   "required": ["grammar"],

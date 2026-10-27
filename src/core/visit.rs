@@ -8,10 +8,10 @@
 //! 其余用默认实现——[`Visitor`] 没有任何必需方法，一个空 `struct` 就能用。
 //!
 //! ```
-//! use analyzer::core::Document;
-//! use analyzer::core::tokenizer::Span;
-//! use analyzer::core::value::{RuleNode, Value};
-//! use analyzer::core::visit::{Flow, Visitor};
+//! use bnf_analyzer::core::Document;
+//! use bnf_analyzer::core::tokenizer::Span;
+//! use bnf_analyzer::core::value::{RuleNode, Value};
+//! use bnf_analyzer::core::visit::{Flow, Visitor};
 //!
 //! /// 统计每种产生式出现了多少次。
 //! #[derive(Default)]
@@ -123,9 +123,9 @@ impl Value {
     /// 返回值是 [`Flow::Stop`] 表示访问者中途叫停了；否则是 [`Flow::Continue`]。
     ///
     /// ```
-    /// use analyzer::core::tokenizer::Span;
-    /// use analyzer::core::value::{RuleNode, Value};
-    /// use analyzer::core::visit::{Flow, Visitor};
+    /// use bnf_analyzer::core::tokenizer::Span;
+    /// use bnf_analyzer::core::value::{RuleNode, Value};
+    /// use bnf_analyzer::core::visit::{Flow, Visitor};
     ///
     /// struct StopAtProcedure {
     ///     seen: Vec<String>,
@@ -164,10 +164,10 @@ impl Document {
     /// 用访问者遍历整份结果（从 `root` 开始）。
     ///
     /// ```
-    /// use analyzer::core::Document;
-    /// use analyzer::core::tokenizer::{Span, Token};
-    /// use analyzer::core::value::Value;
-    /// use analyzer::core::visit::{Flow, Visitor};
+    /// use bnf_analyzer::core::Document;
+    /// use bnf_analyzer::core::tokenizer::{Span, Token};
+    /// use bnf_analyzer::core::value::Value;
+    /// use bnf_analyzer::core::visit::{Flow, Visitor};
     ///
     /// #[derive(Default)]
     /// struct Texts(Vec<String>);
@@ -205,9 +205,9 @@ impl Document {
     /// 这是 `find_rule` 的"全部版"：`find_rule` 只给第一个，且要求根也是节点。
     ///
     /// ```
-    /// use analyzer::core::Document;
-    /// use analyzer::core::tokenizer::Span;
-    /// use analyzer::core::value::Value;
+    /// use bnf_analyzer::core::Document;
+    /// use bnf_analyzer::core::tokenizer::Span;
+    /// use bnf_analyzer::core::value::Value;
     ///
     /// let tree = Value::rule(
     ///     "program",
@@ -305,10 +305,10 @@ where
 /// 或者挂在别的 [`Value`] 上（例如动作产出的子树）：
 ///
 /// ```
-/// use analyzer::core::Document;
-/// use analyzer::core::tokenizer::Span;
-/// use analyzer::core::value::Value;
-/// use analyzer::core::visit::RuleCollector;
+/// use bnf_analyzer::core::Document;
+/// use bnf_analyzer::core::tokenizer::Span;
+/// use bnf_analyzer::core::value::Value;
+/// use bnf_analyzer::core::visit::RuleCollector;
 ///
 /// let tree = Value::rule(
 ///     "program",

@@ -1,16 +1,28 @@
 [package]
-name = "analyzer"
+name = "bnf_analyzer"
 version = "0.1.0"
 edition = "2024"
+description = "Configurable source analyzer: lexical rules plus a grammar, with JSON configuration and a CLI"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/yingquelou/bnf_analyzer"
+keywords = ["parser", "grammar", "bnf", "earley", "tokenizer"]
+categories = ["parser-implementations", "development-tools"]
+# 发布产物只带源码与文档；CI 配置与编辑器配置留在仓库里。
+exclude = [".github/", ".vscode/"]
+
+# docs.rs 默认只开默认 feature，那样 json/cli 的手册页会整批消失。
+[package.metadata.docs.rs]
+all-features = true
 
 [lib]
-name = "analyzer"
+name = "bnf_analyzer"
 
 # 默认只给 core：词法 + 文法 + Earley + 值 + 访问者。
 # JSON 配置与命令行可执行文件都要显式启用：
-#   cargo add analyzer                 # 只有 core
-#   cargo add analyzer --features json # 追加 JSON 配置加载
-#   cargo add analyzer --features cli  # 追加 `analyzer` 可执行文件
+#   cargo add bnf_analyzer                 # 只有 core
+#   cargo add bnf_analyzer --features json # 追加 JSON 配置加载
+#   cargo add bnf_analyzer --features cli  # 追加 `bnf-analyzer` 可执行文件
 #
 # 注意：json 不引入任何外部 JSON 库——JSON 文法是用本 crate 自己写的。
 [features]
@@ -25,7 +37,7 @@ cli = ["json"]
 regex = "1.13.1"
 
 [[bin]]
-name = "analyzer"
+name = "bnf-analyzer"
 path = "src/main.rs"
 required-features = ["cli"]
 

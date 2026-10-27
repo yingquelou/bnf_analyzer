@@ -1,6 +1,6 @@
 //! [`Value`] → JSON 文本。
 //!
-//! 输出形状与 `docs/user/cli.md` 一致：语法树节点写成 `{ "kind": "rule", … }`，
+//! 输出形状与 `docs/user/cli.zh.md` 一致：语法树节点写成 `{ "kind": "rule", … }`，
 //! token 写成 `{ "kind": 类别, "text": 原文, "span": … }`，三种容器（字典、数组、
 //! span）之外没有别的特殊结构。
 //!

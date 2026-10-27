@@ -1,0 +1,90 @@
+<!--
+  每页正文尾巴上挂一次：中英切换按钮 + 样式 + 脚本。
+  正文两份（`<div class="lang" data-lang="zh">` / `"en"`）都在同一个页面里，只显示一份。
+  默认中文；选择记在 localStorage，翻页后仍然生效。
+  注意：`<style>` 与 `<script>` 内部不留空行——CommonMark 的空行会截断 HTML 块，
+  剩下的部分会当成 Markdown 段落处理（CSS 里的 `--` 会被替换成 en dash）。
+-->
+<div class="lang-switch" role="group" aria-label="Documentation language / 文档语言">
+  <button type="button" data-set-lang="zh" lang="zh">中文</button>
+  <button type="button" data-set-lang="en" lang="en">English</button>
+</div>
+<style>
+  /* 两套正文只显示一套；`html` 上还没写 data-lang 时也按中文算，避免先闪一下英文。 */
+  html:not([data-lang="en"]) [data-lang="en"] { display: none; }
+  html[data-lang="en"] [data-lang="zh"] { display: none; }
+  .lang-switch {
+    /* 不悬浮：开关写在正文尾部，由脚本挪到每页正文开头、随文档流排版，不会盖住文字。 */
+    float: right;
+    margin: 0.25rem 0;
+    z-index: 1000;
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    border: 1px solid var(--border-color, #d0d7de);
+    border-radius: 999px;
+    background: var(--main-background-color, #ffffff);
+    box-shadow: 0 1px 4px rgb(0 0 0 / 0.18);
+    font-size: 0.8125rem;
+    line-height: 1.2;
+  }
+  .lang-switch button {
+    padding: 0.1875rem 0.625rem;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--main-color, #1f2328);
+    font: inherit;
+    cursor: pointer;
+  }
+  .lang-switch button:hover { background: var(--sidebar-background-color, #f6f8fa); }
+  .lang-switch button[aria-pressed="true"] {
+    background: var(--sidebar-background-color, #f6f8fa);
+    font-weight: 600;
+  }
+</style>
+<script>
+  (function () {
+    var KEY = "analyzer-doc-lang";
+    var root = document.documentElement;
+    var buttons = Array.prototype.slice.call(document.querySelectorAll(".lang-switch button"));
+    // 开关原本写在正文尾部：挪到每页正文最前面，随文档流排版（悬浮会盖住文字）。
+    var main = document.getElementById("main-content");
+    var group = document.querySelector(".lang-switch");
+    if (main && group && main.firstChild) {
+      main.insertBefore(group, main.firstChild);
+    }
+    // 侧边栏目录是静态 HTML：两种语言的标题都在里面，只留当前语言那一份。
+    function pruneToc(lang) {
+      var links = document.querySelectorAll('#rustdoc-toc a[href^="#"]');
+      Array.prototype.forEach.call(links, function (link) {
+        var id = decodeURIComponent(link.getAttribute("href").slice(1));
+        var heading = id ? document.getElementById(id) : null;
+        var block = heading ? heading.closest(".lang") : null;
+        var item = link.closest("li");
+        if (!block || !item) return;
+        if (block.getAttribute("data-lang") === lang) {
+          item.removeAttribute("hidden");
+        } else {
+          item.setAttribute("hidden", "");
+        }
+      });
+    }
+    function apply(lang) {
+      root.setAttribute("data-lang", lang);
+      buttons.forEach(function (button) {
+        button.setAttribute("aria-pressed", String(button.getAttribute("data-set-lang") === lang));
+      });
+      pruneToc(lang);
+      try { localStorage.setItem(KEY, lang); } catch (error) { /* 无痕模式：不记也行 */ }
+    }
+    buttons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        apply(button.getAttribute("data-set-lang"));
+      });
+    });
+    var saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (error) { /* 读不到就用默认 */ }
+    apply(saved === "en" ? "en" : "zh");
+  })();
+</script>

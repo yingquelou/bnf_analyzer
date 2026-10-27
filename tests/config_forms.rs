@@ -13,14 +13,14 @@
 
 use std::fs;
 
-use analyzer::json;
-use analyzer::core::Analyzer;
-use analyzer::core::grammar::EXPR_KEYS;
-use analyzer::core::pattern::{Pattern, PATTERN_KEYS};
-use analyzer::core::rules::Rules;
-use analyzer::core::tokenizer::Tokenizer;
-use analyzer::core::value::Value;
-use analyzer::json::{Config, ConfigError};
+use bnf_analyzer::json;
+use bnf_analyzer::core::Analyzer;
+use bnf_analyzer::core::grammar::EXPR_KEYS;
+use bnf_analyzer::core::pattern::{Pattern, PATTERN_KEYS};
+use bnf_analyzer::core::rules::Rules;
+use bnf_analyzer::core::tokenizer::Tokenizer;
+use bnf_analyzer::core::value::Value;
+use bnf_analyzer::json::{Config, ConfigError};
 
 const ROOT: &str = env!("CARGO_MANIFEST_DIR");
 

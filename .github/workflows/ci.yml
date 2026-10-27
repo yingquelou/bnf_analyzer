@@ -1,0 +1,63 @@
+name: CI
+
+# 三道闸：测试（三种 feature 组合）、clippy、rustdoc。
+# 不跑 `cargo fmt --check`：本仓库没有 rustfmt.toml，也不是 rustfmt 默认风格，
+# 强行加进来会让每次提交都红；要格式化就单独提一次全仓格式化的 PR。
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: test ${{ matrix.features || '(default)' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 默认 / 全开 / 只 core：core 是硬约束，得单独证明它能独立构建。
+        features: ["", "--all-features", "--no-default-features"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.features || 'default' }}
+
+      - name: cargo test ${{ matrix.features }}
+        run: cargo test ${{ matrix.features }}
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: lint
+
+      - name: clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: rustdoc
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps --all-features

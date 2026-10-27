@@ -12,7 +12,7 @@ use super::grammar;
 /// 用内置 JSON 文法解析一段文本。
 ///
 /// ```
-/// use analyzer::json;
+/// use bnf_analyzer::json;
 ///
 /// let value = json::parse(r#"{"n": 42, "xs": [true, null]}"#).expect("合法 JSON");
 /// assert_eq!(value.as_map().expect("对象").len(), 2);

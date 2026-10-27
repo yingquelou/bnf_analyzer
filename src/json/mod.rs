@@ -8,7 +8,7 @@
 //! | 配置文件 | [`Config`](crate::json::Config)：`builtin()` / `parse()` / `load()`，交给 `Analyzer::from_config` |
 //!
 //! ```
-//! use analyzer::json;
+//! use bnf_analyzer::json;
 //!
 //! let value = json::parse(r#"{ "a": [1, 2.5, true, null, "x\u0041"] }"#).expect("合法 JSON");
 //! assert_eq!(

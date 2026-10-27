@@ -4,12 +4,12 @@
 
 use std::collections::BTreeMap;
 
-use analyzer::core::{AnalyzeError, Analyzer};
-use analyzer::core::grammar::{Expr, Grammar};
-use analyzer::core::parser::ParseError;
-use analyzer::core::rules::{Rule, Rules};
-use analyzer::core::semantics::Semantics;
-use analyzer::core::value::Value;
+use bnf_analyzer::core::{AnalyzeError, Analyzer};
+use bnf_analyzer::core::grammar::{Expr, Grammar};
+use bnf_analyzer::core::parser::ParseError;
+use bnf_analyzer::core::rules::{Rule, Rules};
+use bnf_analyzer::core::semantics::Semantics;
+use bnf_analyzer::core::value::Value;
 
 fn rules() -> Rules {
     Rules::from_rules(vec![

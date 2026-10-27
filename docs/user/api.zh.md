@@ -1,18 +1,18 @@
-# 库 API：把 analyzer 当依赖用
+# 库 API：把 bnf_analyzer 当依赖用
 
-本文面向**这个库的使用者**：把 `analyzer` 加进 `Cargo.toml`，在 Rust 代码里描述文法、
+本文面向**这个库的使用者**：把 `bnf_analyzer` 加进 `Cargo.toml`，在 Rust 代码里描述文法、
 挂动作、遍历结果。讲的是入口、动作、`Value` / `Document`、访问者、错误与边界——
 都是 `pub` 的东西，不需要读实现。
 
-同一侧的其他手册：命令行见 `docs/user/cli.md`，配置里每个键的含义见 `docs/user/config.md`，
-文法在 JSON / Rust 之间怎么对应见 `docs/user/grammar.md`。
+同一侧的其他手册：命令行见 `docs/user/cli.zh.md`，配置里每个键的含义见 `docs/user/config.zh.md`，
+文法在 JSON / Rust 之间怎么对应见 `docs/user/grammar.zh.md`。
 要改这个 crate 本身（分层、模块、测试）才需要 `docs/dev/`。
 
 > 本文的每个 Rust 代码块都是 doctest，`cargo test --all-features --doc` 会真的编译并运行它们；
 > 这里的 API 名字、返回类型、行为描述都不允许"看着像"。
 >
 > 分两层：`Analyzer::new` 属于 core（默认 feature）；`Config` 与 `from_config`
-> 属于 `json` feature。默认 `cargo add analyzer` 只拿到 core。
+> 属于 `json` feature。默认 `cargo add bnf_analyzer` 只拿到 core。
 
 ## 0. 路径：crate 根不做 re-export
 
@@ -20,9 +20,9 @@
 本文示例一律写全路径，你自己的项目里按需引入或取别名：
 
 ```rust
-use analyzer::core as ak;            // 整个 core 换个短名：ak::Analyzer
-use analyzer::core::value::Value;    // 或者只导入要用的那一个
-use analyzer::core::grammar::Expr;   // 名字冲突时还能再取别名
+use bnf_analyzer::core as ak;            // 整个 core 换个短名：ak::Analyzer
+use bnf_analyzer::core::value::Value;    // 或者只导入要用的那一个
+use bnf_analyzer::core::grammar::Expr;   // 名字冲突时还能再取别名
 
 let _ = ak::Document::new(Value::text("x"));
 let _ = Expr::Literal("{".to_string());
@@ -44,8 +44,8 @@ let _ = Expr::Literal("{".to_string());
 `postscript.json`，再交给 `from_config` 装配。少一个入口，就少一处"这份分析器到底用的哪份配置"的歧义。
 
 ```rust
-use analyzer::core::Analyzer;
-use analyzer::json::Config;
+use bnf_analyzer::core::Analyzer;
+use bnf_analyzer::json::Config;
 
 // 内置配置：不读文件，编译期就嵌在库里。
 let builtin = Analyzer::from_config(Config::builtin()).expect("the builtin configuration should be consistent");
@@ -81,11 +81,11 @@ assert_eq!(from_config.analyze("1 2 3").expect("analysis should succeed").token_
 `Tokenizer` / `Parser` 本身也是公开类型，可以脱离 `Analyzer` 直接用。
 
 ```rust
-use analyzer::core::Analyzer;
-use analyzer::core::grammar::{Expr, Grammar};
-use analyzer::core::rules::{Rule, Rules};
-use analyzer::core::semantics::Semantics;
-use analyzer::core::tokenizer::Token;
+use bnf_analyzer::core::Analyzer;
+use bnf_analyzer::core::grammar::{Expr, Grammar};
+use bnf_analyzer::core::rules::{Rule, Rules};
+use bnf_analyzer::core::semantics::Semantics;
+use bnf_analyzer::core::tokenizer::Token;
 
 let rules = Rules::from_rules(vec![
     Rule::skipping_regex("space", r"\s+"),
@@ -131,11 +131,11 @@ assert_eq!(document.token_count(), 3);
 | 语义动作 | 产生式归约时 | 产生式左部 | `Semantics::rule` |
 
 ```rust
-use analyzer::core::Analyzer;
-use analyzer::core::grammar::{Expr, Grammar};
-use analyzer::core::rules::{Rule, Rules};
-use analyzer::core::semantics::Semantics;
-use analyzer::core::value::Value;
+use bnf_analyzer::core::Analyzer;
+use bnf_analyzer::core::grammar::{Expr, Grammar};
+use bnf_analyzer::core::rules::{Rule, Rules};
+use bnf_analyzer::core::semantics::Semantics;
+use bnf_analyzer::core::value::Value;
 
 let rules = Rules::from_rules(vec![
     Rule::skipping_regex("space", r"\s+"),
@@ -209,13 +209,13 @@ assert_eq!(document.root, Value::Int(6));
 
 访问器一律返回 `Option`：`as_bool`、`as_int`、`as_real`、`as_text`、`as_list`、
 `as_map`、`as_token`、`as_rule`；另有 `rule_name()`（节点名或 token 类别）、
-`type_name()`（变体的中文名，用于错误提示）、`children()`、`span()`、`find_rule(name)`。
+`type_name()`（变体名，用于错误提示，如 `integer`）、`children()`、`span()`、`find_rule(name)`。
 
 ```rust
-use analyzer::core::Analyzer;
-use analyzer::core::value::Value;
+use bnf_analyzer::core::Analyzer;
+use bnf_analyzer::core::value::Value;
 
-let analyzer = Analyzer::from_config(analyzer::json::Config::builtin()).expect("the builtin configuration should be consistent");
+let analyzer = Analyzer::from_config(bnf_analyzer::json::Config::builtin()).expect("the builtin configuration should be consistent");
 let document = analyzer.analyze("/f { dup }").expect("analysis should succeed");
 
 // 根节点是 program，往下能找到 procedure。
@@ -272,10 +272,10 @@ assert!(json.starts_with(r#"{"kind":"rule","rule":"program""#));
 ### 5.1 剪枝：只看 `procedure` 外面的 token
 
 ```rust
-use analyzer::core::Analyzer;
-use analyzer::core::tokenizer::Token;
-use analyzer::core::value::Value;
-use analyzer::core::visit::{Flow, Visitor};
+use bnf_analyzer::core::Analyzer;
+use bnf_analyzer::core::tokenizer::Token;
+use bnf_analyzer::core::value::Value;
+use bnf_analyzer::core::visit::{Flow, Visitor};
 
 #[derive(Default)]
 struct OutsideProcedures(Vec<String>);
@@ -294,7 +294,7 @@ impl<'ast> Visitor<'ast> for OutsideProcedures {
     }
 }
 
-let analyzer = Analyzer::from_config(analyzer::json::Config::builtin()).expect("the builtin configuration should be consistent");
+let analyzer = Analyzer::from_config(bnf_analyzer::json::Config::builtin()).expect("the builtin configuration should be consistent");
 let document = analyzer.analyze("/f { 1 2 } /g").expect("analysis should succeed");
 let mut visitor = OutsideProcedures::default();
 assert_eq!(document.accept(&mut visitor), Flow::Continue);
@@ -307,9 +307,9 @@ assert!(!visitor.0.contains(&"1".to_string()), "tokens inside the braces are pru
 ### 5.2 后序：离开节点时再算
 
 ```rust
-use analyzer::core::Analyzer;
-use analyzer::core::value::RuleNode;
-use analyzer::core::visit::{Flow, Visitor};
+use bnf_analyzer::core::Analyzer;
+use bnf_analyzer::core::value::RuleNode;
+use bnf_analyzer::core::visit::{Flow, Visitor};
 
 /// 找出 procedure 的最大嵌套层数：进入时压栈，离开时把子树的成绩交给父节点。
 #[derive(Default)]
@@ -336,7 +336,7 @@ impl<'ast> Visitor<'ast> for Deepest {
     }
 }
 
-let analyzer = Analyzer::from_config(analyzer::json::Config::builtin()).expect("the builtin configuration should be consistent");
+let analyzer = Analyzer::from_config(bnf_analyzer::json::Config::builtin()).expect("the builtin configuration should be consistent");
 let document = analyzer.analyze("/f { { } }").expect("analysis should succeed");
 let mut visitor = Deepest::default();
 document.accept(&mut visitor);
@@ -350,10 +350,10 @@ assert!(visitor.stack.is_empty(), "the root is left as well");
 生命周期），`RuleCollector` / `TokenCollector` 就是这么实现的，也已暴露成便捷方法：
 
 ```rust
-use analyzer::core::Analyzer;
-use analyzer::core::visit::{RuleCollector, TokenCollector};
+use bnf_analyzer::core::Analyzer;
+use bnf_analyzer::core::visit::{RuleCollector, TokenCollector};
 
-let analyzer = Analyzer::from_config(analyzer::json::Config::builtin()).expect("the builtin configuration should be consistent");
+let analyzer = Analyzer::from_config(bnf_analyzer::json::Config::builtin()).expect("the builtin configuration should be consistent");
 let document = analyzer.analyze("/a { 1 } /b { 2 }").expect("analysis should succeed");
 
 // 便捷方法
@@ -376,12 +376,12 @@ assert_eq!(tokens.len(), document.token_count());
 也能扫动作折叠出的值。
 
 ```rust
-use analyzer::core::Analyzer;
-use analyzer::core::grammar::{Expr, Grammar};
-use analyzer::core::rules::{Rule, Rules};
-use analyzer::core::semantics::Semantics;
-use analyzer::core::value::Value;
-use analyzer::core::visit::{Flow, Visitor};
+use bnf_analyzer::core::Analyzer;
+use bnf_analyzer::core::grammar::{Expr, Grammar};
+use bnf_analyzer::core::rules::{Rule, Rules};
+use bnf_analyzer::core::semantics::Semantics;
+use bnf_analyzer::core::value::Value;
+use bnf_analyzer::core::visit::{Flow, Visitor};
 
 #[derive(Default)]
 struct Sums(Vec<i64>);
@@ -460,11 +460,11 @@ assert_eq!(sums.0, [6], "the Int at the root is visited too");
 语法类错误还能问"此时期望什么"：
 
 ```rust
-use analyzer::core::AnalyzeError;
+use bnf_analyzer::core::AnalyzeError;
 
 let error = analyzer_error();
 fn analyzer_error() -> AnalyzeError {
-    analyzer::core::Analyzer::from_config(analyzer::json::Config::builtin()).expect("the builtin configuration should be consistent")
+    bnf_analyzer::core::Analyzer::from_config(bnf_analyzer::json::Config::builtin()).expect("the builtin configuration should be consistent")
         .analyze("/f { dup 1")
         .expect_err("unbalanced parentheses should fail")
 }
@@ -488,7 +488,7 @@ assert!(expected.iter().any(|label| label == "array"), "the expected list only s
 ## 7. 定制词法层
 
 ```rust
-use analyzer::core::rules::{Rule, Rules, LITERAL_PRIORITY};
+use bnf_analyzer::core::rules::{Rule, Rules, LITERAL_PRIORITY};
 
 let rules = Rules::from_rules(vec![
     Rule::skipping_regex("space", r"\s+"),
@@ -511,7 +511,7 @@ assert!(LITERAL_PRIORITY > 10, "literal rules derived from the grammar outrank o
 
 ## 8. 用库自己实现一门格式：`json` 模块
 
-`analyzer::json::grammar` 模块是一份完整的示例——想给别的格式（YAML 子集、S 表达式、
+`bnf_analyzer::json::grammar` 模块是一份完整的示例——想给别的格式（YAML 子集、S 表达式、
 日志、配置文件……）写解析器时，照抄它的三段即可：
 
 | 段落 | 代码 | 对应 API |
@@ -521,7 +521,7 @@ assert!(LITERAL_PRIORITY > 10, "literal rules derived from the grammar outrank o
 | 语义 | `json::grammar::semantics()` | `Semantics::token` / `Semantics::rule` |
 
 ```rust
-use analyzer::json;
+use bnf_analyzer::json;
 
 // 1. 解析：JSON 文本 → Value
 let value = json::parse(r#"{"n": 42, "xs": [true, null]}"#).expect("valid JSON");

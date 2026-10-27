@@ -2,20 +2,20 @@
 
 命令行是"一份配置 + 不带动作"的那条路：读 `postscript.json`（或 `-c` 指定的配置），
 把源码分析成带位置信息的语法树。它**不做求值**——要把树变成值，得把 crate 当库用，
-见 `docs/user/api.md`。
+见 `docs/user/api.zh.md`。
 
-写自己的配置看 `docs/user/config.md`；本文只讲怎么把 `analyzer` 跑起来、输出长什么样。
+写自己的配置看 `docs/user/config.zh.md`；本文只讲怎么把 `bnf-analyzer` 跑起来、输出长什么样。
 
 ## 0. 拿到可执行文件
 
 可执行文件不在默认 feature 里，两种方式都行：
 
 ```text
-$ cargo install --path . --features cli      # 装进 ~/.cargo/bin，之后直接 analyzer …
+$ cargo install --path . --features cli      # 装进 ~/.cargo/bin，之后直接 bnf-analyzer …
 $ cargo run --features cli -- sample.ps      # 不安装，就地跑
 ```
 
-下文为简洁起见直接写 `analyzer …`，前者等价于安装后的命令，后者把 `analyzer` 换成
+下文为简洁起见直接写 `bnf-analyzer …`，前者等价于安装后的命令，后者把 `bnf-analyzer` 换成
 `cargo run --features cli --` 即可。
 
 ---
@@ -23,7 +23,7 @@ $ cargo run --features cli -- sample.ps      # 不安装，就地跑
 ## 1. 用法
 
 ```text
-usage: analyzer [options] [file]
+usage: bnf-analyzer [options] [file]
 
 Analyze a source file with the lexical rules and grammar from a configuration file
 and print the result as JSON (the built-in postscript.json is used by default).
@@ -40,7 +40,7 @@ options:
   -V, --version         print version
 ```
 
-- 选项与文件位置无关：`analyzer sample.ps -t` 与 `analyzer -t sample.ps` 等价。
+- 选项与文件位置无关：`bnf-analyzer sample.ps -t` 与 `bnf-analyzer -t sample.ps` 等价。
 - `-` 表示标准输入，也可以干脆不写文件参数。
 - `--bnf` 不需要源码：它只渲染文法，给了文件也不会读。
 - 配置默认是**编译期内嵌**的 `postscript.json`，与工作目录无关；`-c` 才读磁盘。
@@ -104,7 +104,7 @@ options:
 ### 2.2 `-t`：只输出 token 流
 
 ```text
-$ printf '1 2' | analyzer -t --compact
+$ printf '1 2' | bnf-analyzer -t --compact
 [{"kind":"number","text":"1","span":{"start":0,"end":1,"line":1,"column":1}},{"kind":"number","text":"2","span":{"start":2,"end":3,"line":1,"column":3}}]
 ```
 
@@ -114,7 +114,7 @@ $ printf '1 2' | analyzer -t --compact
 ### 2.3 `--bnf`：当前文法的只读视图
 
 ```text
-$ analyzer --bnf
+$ bnf-analyzer --bnf
 program ::= value* ;
 value ::= @number | @boolean | @string | @hexstring | @name | @immediate | @operator | procedure | array | dictionary ;
 procedure ::= "{" value* "}" ;
@@ -140,7 +140,7 @@ entry ::= @name value ;
 错误一律写 stderr，进程退出码为 1，并附上出错行与插入符：
 
 ```text
-$ printf '/f { dup 1' | analyzer
+$ printf '/f { dup 1' | bnf-analyzer
 line 1, column 11: unexpected end of input, expected one of: "<<", "[", "{", "}", array, boolean,
 dictionary, hexstring and 7 more
   /f { dup 1
@@ -153,7 +153,7 @@ dictionary, hexstring and 7 more
 - 配置错误发生在读源码之前，因此没有插入符：
 
 ```text
-$ analyzer -c old.json -
+$ bnf-analyzer -c old.json -
 configuration version 1 is no longer supported: patterns and right-hand sides must be structured
 objects. Wrap a regex as { "regex": … }, rewrite BNF text as { "rule": … } / { "token": … } /
 { "seq": [ … ] }, and set version to 2
@@ -176,21 +176,21 @@ objects. Wrap a regex as { "regex": … }, rewrite BNF text as { "rule": … } /
 
 ```text
 # 分析文件
-analyzer sample.ps
+bnf-analyzer sample.ps
 
 # 从管道读，紧凑输出，再交给 jq
-cat sample.ps | analyzer - --compact | jq '.children | length'
+cat sample.ps | bnf-analyzer - --compact | jq '.children | length'
 
 # 换一份配置试文法
-analyzer -c examples/minimal.json --bnf
-printf '{ 1 /x }' | analyzer -c examples/minimal.json --compact
+bnf-analyzer -c examples/minimal.json --bnf
+printf '{ 1 /x }' | bnf-analyzer -c examples/minimal.json --compact
 
 # 只看词法，验证最长匹配与优先级
-printf '1 /a true' | analyzer -t --compact
+printf '1 /a true' | bnf-analyzer -t --compact
 ```
 
 需要"分析 + 求值/建 AST"时，`-t` 与默认输出都不够用：命令行这条路不执行动作。
-把 crate 当库用，按 `docs/user/api.md` 注册 `Semantics` 即可，用的是同一份 `Config`。
+把 crate 当库用，按 `docs/user/api.zh.md` 注册 `Semantics` 即可，用的是同一份 `Config`。
 
 ---
 
@@ -198,7 +198,7 @@ printf '1 /a true' | analyzer -t --compact
 
 | 你想 | 读 |
 |---|---|
-| 写一份自己的配置（换语言、加语法、调优先级） | `docs/user/config.md` |
-| 把树变成值（求和、建字典、求值） | `docs/user/api.md` |
-| 弄清某个键对应哪个文法节点 | `docs/user/grammar.md` |
-| 改这个 crate 本身 | `docs/dev/architecture.md` |
+| 写一份自己的配置（换语言、加语法、调优先级） | `docs/user/config.zh.md` |
+| 把树变成值（求和、建字典、求值） | `docs/user/api.zh.md` |
+| 弄清某个键对应哪个文法节点 | `docs/user/grammar.zh.md` |
+| 改这个 crate 本身 | `docs/dev/architecture.zh.md` |

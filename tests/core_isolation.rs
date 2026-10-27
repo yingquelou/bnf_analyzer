@@ -84,7 +84,7 @@ fn core_has_no_third_party_dependency_but_regex() {
         }
         for line in text.lines() {
             let line = line.trim_start();
-            // 文档里的示例站在使用者视角写 `use analyzer::…`，那是 doctest 而不是真依赖。
+            // 文档里的示例站在使用者视角写 `use bnf_analyzer::…`，那是 doctest 而不是真依赖。
             if line.starts_with("//") {
                 continue;
             }
@@ -112,19 +112,35 @@ fn core_has_no_third_party_dependency_but_regex() {
 fn manifest_depends_on_regex_only() {
     let manifest = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"))
         .expect("Cargo.toml should be readable");
-    let section = manifest
-        .split("[dependencies]")
-        .nth(1)
-        .expect("a [dependencies] section should exist");
-    let section = section.split("\n[").next().expect("the section should have entries");
-    let names: Vec<&str> = section
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .filter_map(|line| line.split('=').next())
-        .map(str::trim)
-        .collect();
+    let names = dependency_names(&manifest);
     assert_eq!(names, ["regex"], "only regex should be listed: {names:?}");
+}
+
+/// 取依赖名：既认手写的 `[dependencies]` 段，也认 `cargo package` 规范化后的 `[dependencies.regex]` 表。
+fn dependency_names(manifest: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut in_table = false;
+    for raw in manifest.lines() {
+        let line = raw.trim();
+        if line.starts_with('[') {
+            in_table = line == "[dependencies]";
+            if let Some(name) = line
+                .strip_prefix("[dependencies.")
+                .and_then(|rest| rest.strip_suffix(']'))
+            {
+                names.push(name.trim().to_string());
+            }
+            continue;
+        }
+        if !in_table || line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((key, _)) = line.split_once('=') {
+            names.push(key.trim().to_string());
+        }
+    }
+    names.sort();
+    names
 }
 
 /// 收集一段源码里 `pub use` 引入的名字（跳过注释）。

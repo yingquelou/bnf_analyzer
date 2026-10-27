@@ -1,21 +1,21 @@
 //! 命令行入口：加载 JSON 配置，把源码分析成 token 流或语法树，并以 JSON 输出。
 //!
 //! 这条路径不带动作，输出的是带位置信息的默认语法树；需要语义动作时请把本 crate 当库用，
-//! 见 [`analyzer`] 的文档。
+//! 见 [`bnf_analyzer`] 的文档。
 
 use std::fs;
 use std::io::{self, Read};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use analyzer::core::Analyzer;
-use analyzer::core::tokenizer::Span;
-use analyzer::core::value::Value;
-use analyzer::json;
-use analyzer::json::Config;
+use bnf_analyzer::core::Analyzer;
+use bnf_analyzer::core::tokenizer::Span;
+use bnf_analyzer::core::value::Value;
+use bnf_analyzer::json;
+use bnf_analyzer::json::Config;
 
 const USAGE: &str = "\
-usage: analyzer [options] [file]
+usage: bnf-analyzer [options] [file]
 
 Analyze a source file with the lexical rules and grammar from a configuration file
 and print the result as JSON (the built-in postscript.json is used by default).
@@ -55,7 +55,7 @@ fn run(args: &[String]) -> Result<(), String> {
                 return Ok(());
             }
             "-V" | "--version" => {
-                println!("analyzer {}", env!("CARGO_PKG_VERSION"));
+                println!("bnf-analyzer {}", env!("CARGO_PKG_VERSION"));
                 return Ok(());
             }
             "-c" | "--config" => {

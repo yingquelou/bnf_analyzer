@@ -1,14 +1,14 @@
 # 配置参考：用一份 JSON 描述一门语言
 
-面向"想分析自己的语言、但不写 Rust"的读者。`analyzer` 的全部语言知识都在一份配置里：
+面向"想分析自己的语言、但不写 Rust"的读者。`bnf-analyzer` 的全部语言知识都在一份配置里：
 词法规则（`rules`）+ 文法产生式（`grammar`）。换一份配置就是换一门语言，二进制不用改。
 
 配置只接受**结构化对象**：正则要包成 `{ "regex": "…" }`，右部要拆成
 `{ "rule": … }` / `{ "token": … }` / `{ "seq": [ … ] }`。字符串写法（正则原文、BNF/EBNF 文本）
 自 `version: 2` 起被明确拒绝——配置里不存在"再解析一小段文本"的隐藏步骤，读到什么就是什么。
 
-> 本文只讲**写配置**。要把 crate 当库用（在 Rust 里挂动作、算值），看 `docs/user/api.md`；
-> 想看同一份文法在 JSON / Rust / BNF 三种形态之间的逐项对照，看 `docs/user/grammar.md`。
+> 本文只讲**写配置**。要把 crate 当库用（在 Rust 里挂动作、算值），看 `docs/user/api.zh.md`；
+> 想看同一份文法在 JSON / Rust / BNF 三种形态之间的逐项对照，看 `docs/user/grammar.zh.md`。
 
 配套文件：
 
@@ -195,8 +195,8 @@
 先用最省事的两步确认配置本身成立：
 
 ```text
-$ analyzer -c my.json --bnf        # ① 文法编得出来吗？起手看 BNF 视图
-$ printf '1 /x { dup }' | analyzer -c my.json -t --compact   # ② 词法切得对吗？
+$ bnf-analyzer -c my.json --bnf        # ① 文法编得出来吗？起手看 BNF 视图
+$ printf '1 /x { dup }' | bnf-analyzer -c my.json -t --compact   # ② 词法切得对吗？
 ```
 
 - `--bnf` 会把结构化文法渲染成 BNF 文本（`rule` → 裸名、`token` → `@名字`、`literal` → 引号）。
@@ -206,11 +206,11 @@ $ printf '1 /x { dup }' | analyzer -c my.json -t --compact   # ② 词法切得�
 两步都对，再跑整条流水线：
 
 ```text
-$ printf '1 /x { dup }' | analyzer -c my.json --compact
+$ printf '1 /x { dup }' | bnf-analyzer -c my.json --compact
 ```
 
 命令行只输出语法树，不带动作。要把树变成值（求和、建字典、求值），
-得把 crate 当库用，见 `docs/user/api.md`。
+得把 crate 当库用，见 `docs/user/api.zh.md`。
 
 ---
 
@@ -275,7 +275,7 @@ structured objects. Wrap a regex as { "regex": … }, rewrite BNF text as { "rul
 | configuration version 1 is no longer supported | 文件还是 `version: 1` | 按提示改成对象写法并升到 `2` |
 
 错误都出现在**读源码之前**（配置问题）或**切词/解析时**（源码问题），两者不会混在一起。
-源码类错误会带 `line N, column M` 与插入符，见 `docs/user/cli.md`。
+源码类错误会带 `line N, column M` 与插入符，见 `docs/user/cli.zh.md`。
 
 ---
 
@@ -293,7 +293,7 @@ dictionary ::= "<<" entry* ">>" ;
 entry ::= @name value ;
 ```
 
-（`analyzer --bnf` 的输出；第二行原文是一整行，这里按版面折行。）
+（`bnf-analyzer --bnf` 的输出；第二行原文是一整行，这里按版面折行。）
 
 它覆盖的是一份**够用**的子集：原子（数字、布尔、字符串、十六进制串、名字、直接名、操作符）、
 三种容器（过程、数组、字典）、注释与空白。字符串支持一层嵌套括号

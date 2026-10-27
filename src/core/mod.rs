@@ -6,7 +6,7 @@
 //! `grammar` 管文法（产生式与组合子），`semantics` 是动作表——留空就输出带位置的默认语法树。
 //! 配置文件（`postscript.json` 那种）不在这层：那是 `json` feature 的事，不用配置文件也完全可用。
 //!
-//! 公共路径统一是 `analyzer::core::…`：`core` 根上只放 [`Analyzer`]、[`Document`]、
+//! 公共路径统一是 `bnf_analyzer::core::…`：`core` 根上只放 [`Analyzer`]、[`Document`]、
 //! [`AnalyzeError`]、[`SetupError`] 四个类型，其余按环节分模块。
 //!
 //! | 模块 | 内容 |
@@ -20,13 +20,13 @@
 //! | [`visit`] | [`Visitor`](visit::Visitor) / [`Flow`](visit::Flow) / 两个收集器：事后遍历 |
 //! | [`parser`] | Earley 分析器；由 `Analyzer` 驱动，通常不用直接碰 |
 //!
-//! 想写短名就自己起：`use analyzer::core as ak;` 之后写 `ak::Analyzer`。
+//! 想写短名就自己起：`use bnf_analyzer::core as ak;` 之后写 `ak::Analyzer`。
 //!
 //! ```
-//! use analyzer::core::Analyzer;
-//! use analyzer::core::grammar::{Expr, Grammar};
-//! use analyzer::core::rules::{Rule, Rules};
-//! use analyzer::core::semantics::Semantics;
+//! use bnf_analyzer::core::Analyzer;
+//! use bnf_analyzer::core::grammar::{Expr, Grammar};
+//! use bnf_analyzer::core::rules::{Rule, Rules};
+//! use bnf_analyzer::core::semantics::Semantics;
 //!
 //! let rules = Rules::from_rules(vec![
 //!     Rule::skipping_regex("space", r"\s+"),
@@ -65,7 +65,7 @@ mod analyzer;
 mod document;
 mod error;
 
-// 子模块用 `self::` 前缀，避免和 crate 同名的 `analyzer` 模块混淆。
+// 子模块用 `self::` 前缀：`analyzer` / `document` / `error` 都只在本模块内可见。
 pub use self::analyzer::Analyzer;
 pub use self::document::Document;
 pub use self::error::{AnalyzeError, SetupError};

@@ -3,7 +3,7 @@
 //! 1. **Rust 内嵌**（作为依赖库使用）——用 [`Expr`] 直接拼文法：
 //!
 //!    ```
-//!    use analyzer::core::grammar::{Expr, Grammar};
+//!    use bnf_analyzer::core::grammar::{Expr, Grammar};
 //!
 //!    let grammar = Grammar::builder()
 //!        .start("program")

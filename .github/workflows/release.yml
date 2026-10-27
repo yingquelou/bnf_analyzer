@@ -1,0 +1,111 @@
+name: Release
+
+# 打标签即发布：`git tag v0.1.1 && git push origin v0.1.1`。
+# 首次发布手动做（`cargo login` + `cargo publish` + 打 v0.1.0 标签），之后交给这条流水线。
+#
+# 一次性配置：仓库 Settings → Secrets and variables → Actions → 新增 `CARGO_REGISTRY_TOKEN`，
+# 值取 crates.io 的 API token（只勾 publish-new / publish-update 即可）。
+# 也可以改用 crates.io 的 Trusted Publishing（OIDC，无需存 token），那就把 publish 步骤
+# 换成 `rust-lang/crates-io-auth-action` 取 token，并给作业加 `id-token: write` 权限。
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    name: verify ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release
+
+      # 标签与 Cargo.toml 不一致是最常见的发布事故：v0.1.1 的标签配上 0.1.0 的版本号，
+      # 会在 crates.io 上留下一个永远补不回来的版本。
+      - name: Check that the tag matches the crate version
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          case "$tag" in
+            v*) tagged="${tag#v}" ;;
+            *)
+              echo "::error::tag must look like v1.2.3, got ${tag}"
+              exit 1
+              ;;
+          esac
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | python3 -c 'import json, sys; print(json.load(sys.stdin)["packages"][0]["version"])')
+          if [ "$tagged" != "$version" ]; then
+            echo "::error::tag ${tag} does not match Cargo.toml version ${version}"
+            exit 1
+          fi
+          echo "releasing bnf_analyzer ${version}"
+
+      - name: Test
+        run: cargo test --all-features
+
+      - name: Check that rustdoc stays warning-free
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps --all-features
+
+  publish:
+    name: publish to crates.io
+    needs: verify
+    runs-on: ubuntu-latest
+    # 在这里挂 environment 后，可以在仓库设置里给发布加人工审批或限定分支/标签。
+    environment: release
+    permissions:
+      contents: write # 创建 GitHub Release
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release
+
+      - name: Check the crates.io token
+        env:
+          TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [ -z "${TOKEN}" ]; then
+            echo "::error::repository secret CARGO_REGISTRY_TOKEN is not set"
+            exit 1
+          fi
+
+      # cargo publish 会把 .crate 留在 target/package/，下一步直接拿它当发布附件。
+      # 版本号忘了 bump 时由 cargo 自己报 "already uploaded" 并让作业变红——不要在这里
+      # 用 `cargo info` 预检：它优先解析本地工作区，永远返回“已经存在”，会把发布全挡住。
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish
+
+      # 若上一步已成功、这一步失败（例如 Releases 权限不足），重跑整条流水线会被
+      # "version already published" 挡住——此时手动补一条 Release 即可，别重新跑 publish。
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            target/package/bnf_analyzer-*.crate \
+            --verify-tag \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes

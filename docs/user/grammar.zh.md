@@ -6,14 +6,14 @@
 |---|---|---|---|
 | **JSON 对象** | 配置文件里的 `pattern` 与 `rhs` | `Config` → `Analyzer::from_config` | `json` |
 | **Rust 代码** | 作为依赖库 | `Grammar::builder()` → `Analyzer::new` | `core`（默认） |
-| BNF 文本 | **只读视图**：`Grammar::to_bnf()` / `analyzer --bnf` 的输出 | 不是输入格式 | — |
+| BNF 文本 | **只读视图**：`Grammar::to_bnf()` / `bnf-analyzer --bnf` 的输出 | 不是输入格式 | — |
 
 本文逐项对照这两侧，并说明 BNF 视图怎么读。配置里每个键的完整语义、词法优先级裁决、
-schema 与报错对照在 `docs/user/config.md`；库 API 的其他部分（动作、`Value`、访问者、错误）
-在 `docs/user/api.md`。要改这个 crate 本身才需要 `docs/dev/`。
+schema 与报错对照在 `docs/user/config.zh.md`；库 API 的其他部分（动作、`Value`、访问者、错误）
+在 `docs/user/api.zh.md`。要改这个 crate 本身才需要 `docs/dev/`。
 
 > JSON 相关能力（`Config`、`from_config`、`--bnf` 输出）都在 `json` feature 下；
-> 默认 `cargo add analyzer` 只有 core。本文的 Rust 代码块只用 core，
+> 默认 `cargo add bnf_analyzer` 只有 core。本文的 Rust 代码块只用 core，
 > `cargo test --doc` 在默认 feature 下也能跑。
 
 ---
@@ -54,7 +54,7 @@ schema 与报错对照在 `docs/user/config.md`；库 API 的其他部分（动�
 ### Rust 写法
 
 ```rust
-use analyzer::core::grammar::{Expr, Grammar};
+use bnf_analyzer::core::grammar::{Expr, Grammar};
 
 let grammar = Grammar::builder()
     .start("digit")
@@ -103,7 +103,7 @@ digit ::= "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
 ```
 
 ```rust
-use analyzer::core::grammar::{Expr, Grammar};
+use bnf_analyzer::core::grammar::{Expr, Grammar};
 
 let grammar = Grammar::builder()
     .start("program")
@@ -153,10 +153,10 @@ assert_eq!(grammar.to_bnf().lines().next(), Some("program ::= digit+ ;"));
 所以"我明明定义了 `number`，却不匹配数字"这类问题，几乎都是把 `token` 写成了 `rule`。
 
 ```rust
-use analyzer::core::Analyzer;
-use analyzer::core::grammar::{Expr, Grammar};
-use analyzer::core::rules::{Rule, Rules};
-use analyzer::core::semantics::Semantics;
+use bnf_analyzer::core::Analyzer;
+use bnf_analyzer::core::grammar::{Expr, Grammar};
+use bnf_analyzer::core::rules::{Rule, Rules};
+use bnf_analyzer::core::semantics::Semantics;
 
 let rules = Rules::from_rules(vec![
     Rule::skipping_regex("space", r"\s+"),
@@ -206,7 +206,7 @@ assert!(analyzer.analyze("n").is_err());
 
 **重复在语法树里是平的**：`star` / `plus` / `opt` 只是写法糖，归约时把子值摊平，
 所以 `children` 里看到的是一个个元素，不会多出一层包装节点；`to_bnf()` 里也只看到 `*` / `+` / `?`。
-（内部怎么展开成等价的普通产生式，见 `docs/dev/internals.md`。）
+（内部怎么展开成等价的普通产生式，见 `docs/dev/internals.zh.md`。）
 
 ---
 
@@ -224,8 +224,8 @@ assert!(analyzer.analyze("n").is_err());
 | 关键字二选一 | `{ "alt": [{ "literal": "if" }, { "literal": "else" }] }` | `Pattern::alt([...])` | `if\|else` |
 
 ```rust
-use analyzer::core::pattern::Pattern;
-use analyzer::core::rules::Rule;
+use bnf_analyzer::core::pattern::Pattern;
+use bnf_analyzer::core::rules::Rule;
 
 // JSON 里的 `{ "name": …, "pattern": … }` 读出来就是 `Rule`（需要 json feature）。
 // 这里直接用 Rust 构造同样的对象，验证 pattern 键编译出来的正则。
@@ -247,7 +247,7 @@ assert_eq!(brace.pattern, Pattern::literal("{"));
 ## 7. 动作：只有 Rust 路径有
 
 JSON 路径（可执行 crate）不带动作，输出默认语法树。要在归约时算值，就把 crate 当库用
-（动作的缓存语义与错误类型见 `docs/user/api.md`）：
+（动作的缓存语义与错误类型见 `docs/user/api.zh.md`）：
 
 | 动作 | 挂在哪种符号上 | 键 | 例子 |
 |---|---|---|---|
@@ -256,11 +256,11 @@ JSON 路径（可执行 crate）不带动作，输出默认语法树。要在归
 | 语义动作 | 任意产生式 | 产生式名 | `.rule("program", …)` |
 
 ```rust
-use analyzer::core::Analyzer;
-use analyzer::core::grammar::{Expr, Grammar};
-use analyzer::core::rules::{Rule, Rules};
-use analyzer::core::semantics::Semantics;
-use analyzer::core::value::Value;
+use bnf_analyzer::core::Analyzer;
+use bnf_analyzer::core::grammar::{Expr, Grammar};
+use bnf_analyzer::core::rules::{Rule, Rules};
+use bnf_analyzer::core::semantics::Semantics;
+use bnf_analyzer::core::value::Value;
 
 let rules = Rules::from_rules(vec![
     Rule::skipping_regex("space", r"\s+"),
@@ -309,8 +309,8 @@ assert_eq!(
 稳定后再搬成 Rust 代码（或反过来）。
 
 ```rust
-use analyzer::core::grammar::{Expr, Grammar};
-use analyzer::json::Config;
+use bnf_analyzer::core::grammar::{Expr, Grammar};
+use bnf_analyzer::json::Config;
 
 let from_json = Config::parse(
     r#"{

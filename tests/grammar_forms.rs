@@ -1,4 +1,4 @@
-//! `docs/user/grammar.md` 里每一行「文法形式 ↔ 代码」的可执行版本。
+//! `docs/user/grammar.zh.md` 里每一行「文法形式 ↔ 代码」的可执行版本。
 //!
 //! 文档只描述这里被断言过的行为：改文法模型时，先让这些测试重新变绿，再同步文档。
 //! 每个测试名都能在文档的「对应测试」列里找到。
@@ -9,15 +9,15 @@
 
 use std::collections::BTreeMap;
 
-use analyzer::core::Analyzer;
-use analyzer::core::grammar::{Expr, Grammar, GrammarSpec, Item};
-use analyzer::core::rules::{Rule, Rules};
-use analyzer::core::semantics::Semantics;
-use analyzer::core::value::Value;
+use bnf_analyzer::core::Analyzer;
+use bnf_analyzer::core::grammar::{Expr, Grammar, GrammarSpec, Item};
+use bnf_analyzer::core::rules::{Rule, Rules};
+use bnf_analyzer::core::semantics::Semantics;
+use bnf_analyzer::core::value::Value;
 
 /// 一小段 JSON 文本 → [`Value`]，顺便验一遍本库的 JSON 文法。
 fn json_text(text: &str) -> Value {
-    analyzer::json::parse(text).unwrap_or_else(|error| panic!("{text} is not valid JSON: {error}"))
+    bnf_analyzer::json::parse(text).unwrap_or_else(|error| panic!("{text} is not valid JSON: {error}"))
 }
 
 /// 手搭一个对象值，供需要动态生成的用例使用。
