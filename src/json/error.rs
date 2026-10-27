@@ -16,6 +16,7 @@ pub struct JsonError {
 }
 
 impl JsonError {
+    /// 由行列与说明构造。
     pub fn new(line: usize, column: usize, message: impl Into<String>) -> Self {
         Self {
             line,

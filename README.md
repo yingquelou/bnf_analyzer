@@ -27,10 +27,11 @@ cargo add bnf_analyzer --features cli  # 追加 bnf-analyzer 可执行文件
 ```
 
 第三方依赖只有 `regex` 一个 crate：`cargo add bnf_analyzer` 之后，`Cargo.lock` 里不会多出
-JSON 库或错误处理框架。`json` feature 的 JSON 读写也在这一个 crate 里完成。
+JSON 库或错误处理框架。`json` feature 的 JSON 读写也在这一个 crate 里完成；`cli` 另外带一个
+`unicode-width`，只用来把报错的插入符按终端列对齐。
 
 想给别的格式（YAML 子集、S 表达式、日志、配置文件）写解析器，`bnf_analyzer::json::grammar`
-就是一份可照抄的完整示例：三条词法规则、十一条产生式、一组动作。
+就是一份可照抄的完整示例：三条词法规则、七条产生式、一组动作。
 
 ## 文档
 

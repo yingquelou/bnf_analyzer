@@ -39,6 +39,7 @@ JSON:  Config.grammar.parse_grammar()  ── GrammarSpec::from_spec
                               │  ④ 逐条展开糖 → 追加 $starN/$plusN/$optN/$groupN
                               │  ⑤ 收集 Expr::Literal（供 Rules::with_literals 用）
                               │  ⑥ 校验 Expr::Rule 引用的非终结符存在（UnknownSymbol）
+                              │  ⑦ 校验每个非终结符都推得出终结符串（NonProductive）
                               └──► Grammar
 ```
 
@@ -52,11 +53,18 @@ JSON:  Config.grammar.parse_grammar()  ── GrammarSpec::from_spec
 
 | 写法 | 展开 |
 |---|---|
-| `star(a)` | `$starN ::= a $starN` + `$starN ::= ε` |
-| `plus(a)` | `$plusN ::= a $starM`（复用 `star` 的那个 `$starM`） |
+| `star(a)` | `$starN ::= $starN a` + `$starN ::= ε`（左递归） |
+| `plus(a)` | `$plusN ::= a` + `$plusN ::= $plusN a`（左递归） |
 | `opt(a)` | `$optN ::= a` + `$optN ::= ε` |
 | 分组（`seq`/`alt` 作为子项） | 一个 `$groupN`（内部可能有多条候选） |
 | `seq([])` | 一条空 items 的产生式（ε），不生成辅助符号 |
+
+重复**必须是左递归**：`star` / `plus` 的右递归写法（`$starN ::= a $starN`）在 Earley 里是最坏
+形状——每归约一步都要把"剩余全部子值"复制给上层，时间 O(n³)、内存 O(n²)。左递归每步只往产出链上
+接一个节点（见 §6），摊平后的顺序不变。
+
+分组也**不做分配律展开**：`seq` 里嵌 n 个二选一，展开会得到 2ⁿ 条产生式；现在每个子项各自降级成
+一个 `$groupN`，规模与表达式大小成正比。这条由 `nested_alternatives_stay_linear` 守着。
 
 合成产生式（`synthetic = true`）必须**三处都藏住**，否则用户会看到实现细节：
 
@@ -101,7 +109,16 @@ JSON:  Config.grammar.parse_grammar()  ── GrammarSpec::from_spec
 
 - 解析器是 Earley：左递归、ε 产生式、歧义都能直接吃（不改写文法）。最坏 O(n³)，
   歧义时只取**最先完成的推导**，不枚举全部解析。
-- 归约动作按"归约点 + 结束位置"缓存，所以一次归约只执行一次；回调必须无副作用。
+- **识别阶段不物化语义值**：每个项匹配到的符号产出是一棵延迟展开的拼接树（`parser.rs` 里的
+  `Run`：`Arc` 节点，只有"叶"与"拼接"两种），拼接 O(1)，每个节点缓存自己覆盖的区间，
+  只有真要 `&[Value]` 时才遍历一次摊平。
+- 归约前先看 `chart[origin]` 有没有父项在等这个非终结符；**没人等、又不在接受位置就跳过建值**。
+  `program ::= value*` 这类起始符号在每个前缀位置都会完成一次，少了这一步就是 O(n²) 的无用功。
+- 效果：内置 PostScript 配置 1001 token 从 5.5 s 降到 14 ms，64001 token 约 1 s（线性）；
+  `src/core/parser.rs::parses_long_repetitions` 与 `src/json/tests.rs::parses_long_arrays_and_objects` 守着。
+- 拼接树的深度与输入长度同阶，`Node` 的 `Drop` 用显式工作栈析构——默认的递归析构几千个 token 就爆栈。
+- 归约动作按"归约点 + 结束位置"缓存，所以一次归约只执行一次；没被任何推导采用的归约不会执行动作。
+  回调必须无副作用。
 - 词法类别与文法符号**互不推断**：`Rule` 只查产生式表，`Token` 只查词法表。
 - `Span.start/end` 按字节、左闭右开；`line/column` 按字符、1 基。EOF 的 span 是零宽区间。
 

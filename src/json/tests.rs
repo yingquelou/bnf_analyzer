@@ -67,6 +67,26 @@ fn parses_empty_containers() {
 }
 
 #[test]
+fn parses_long_arrays_and_objects() {
+    // 重复写在容器产生式里，所以这两条是线性的：如果改回"单独一条列表规则再逐步追加"，
+    // 这里会从几百毫秒变成十秒以上。
+    let array = format!("[{}]", (0..5000).map(|i| i.to_string()).collect::<Vec<_>>().join(","));
+    let value = parse(&array).expect("a long array should parse");
+    let items = value.as_list().expect("the result should be a list");
+    assert_eq!(items.len(), 5000);
+    assert_eq!(items[4999], Value::Int(4999));
+
+    let object = format!(
+        "{{{}}}",
+        (0..2000).map(|i| format!("\"k{i}\": {i}")).collect::<Vec<_>>().join(",")
+    );
+    let value = parse(&object).expect("a long object should parse");
+    let members = value.as_map().expect("the result should be a map");
+    assert_eq!(members.len(), 2000);
+    assert_eq!(members.get("k1999"), Some(&Value::Int(1999)));
+}
+
+#[test]
 fn unescapes_strings_including_surrogate_pairs() {
     let value = parse(r#""a\"b\\c\/d\n\t\u0041\uD83D\uDE00""#).expect("should be valid");
     assert_eq!(value, text("a\"b\\c/d\n\tA😀"));
@@ -197,11 +217,9 @@ fn grammar_matches_the_documented_bnf() {
     for line in [
         "json ::= value ;",
         "value ::= object | array | @string | @number | \"true\" | \"false\" | \"null\" ;",
-        "object ::= \"{\" \"}\" | \"{\" members \"}\" ;",
-        "members ::= member | members \",\" member ;",
+        "object ::= \"{\" \"}\" | \"{\" member ( \",\" member )* \"}\" ;",
         "member ::= @string \":\" value ;",
-        "array ::= \"[\" \"]\" | \"[\" elements \"]\" ;",
-        "elements ::= value | elements \",\" value ;",
+        "array ::= \"[\" \"]\" | \"[\" value ( \",\" value )* \"]\" ;",
     ] {
         assert!(bnf.contains(line), "BNF is missing `{line}`:\n{bnf}");
     }

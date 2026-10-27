@@ -8,11 +8,9 @@
 //! ```text
 //! json ::= value ;
 //! value ::= object | array | @string | @number | "true" | "false" | "null" ;
-//! object ::= "{" "}" | "{" members "}" ;
-//! members ::= member | members "," member ;
+//! object ::= "{" "}" | "{" member ( "," member )* "}" ;
 //! member ::= @string ":" value ;
-//! array ::= "[" "]" | "[" elements "]" ;
-//! elements ::= value | elements "," value ;
+//! array ::= "[" "]" | "[" value ( "," value )* "]" ;
 //! ```
 //!
 //! （同名多条产生式在 BNF 视图里合并成一行 `|`，源码里是分开声明的。）
@@ -22,13 +20,15 @@
 //! - **只有三条词法规则**：空白、字符串、数字。`true`/`false`/`null` 与
 //!   `{ } [ ] , :` 六个标点都是字面量终结符，由 [`Grammar::literals`] 在装配时
 //!   自动派生成词法规则，不必在 `rules` 里重复声明。
-//! - **`members` / `elements` 用左递归**而不是 `*` 号糖：Earley 支持左递归，
-//!   而左递归版本能自己累积列表（每次归约拿到"已累积的列表 + 一个元素"），
-//!   比 `star` 的摊平结果更好写动作。
-//! - **空对象/空数组单独一条产生式**：`"{" "}"` 与 `"{" members "}"` 的形状不同，
+//! - **重复写在容器自己的产生式里**（`"{" member ( "," member )* "}"`），不另立一条
+//!   `members` 规则。单独成规则也能解析，但那条规则在每个前缀位置都会完成一次，
+//!   容器每多一个成员就要重建一次已累积的列表，规模一上去就是平方；写在容器里，
+//!   容器只在 `}` / `]` 处完成一次。`*` 展平出来的参数里夹着逗号，动作按下标隔一个取。
+//! - **空对象/空数组单独一条产生式**：`"{" "}"` 与非空形态的形状不同，
 //!   动作只要看参数个数就能分辨，不需要额外哨兵。
 
 use std::collections::BTreeMap;
+use std::sync::OnceLock;
 
 use crate::core::Analyzer;
 use crate::core::grammar::{Expr, Grammar};
@@ -88,22 +88,17 @@ pub fn grammar() -> Grammar {
             "object",
             Expr::seq([Expr::literal("{"), Expr::literal("}")]),
         )
+        // 重复写在容器自己的产生式里：`"{" member ("," member)* "}"`。
+        // 单独开一条 `members` 规则也能解析，但那条规则会在**每个前缀位置**完成一次
+        // （`member` 一结束它就成立），容器每多一个成员就要重建一次已累积的列表，
+        // 代价是 O(n²)。写在容器里，容器只在 `}` 处完成一次。
         .production(
             "object",
             Expr::seq([
                 Expr::literal("{"),
-                Expr::rule("members"),
-                Expr::literal("}"),
-            ]),
-        )
-        // 成员列表：左递归累积成 List<List<key, value>>
-        .production("members", Expr::rule("member"))
-        .production(
-            "members",
-            Expr::seq([
-                Expr::rule("members"),
-                Expr::literal(","),
                 Expr::rule("member"),
+                Expr::star(Expr::seq([Expr::literal(","), Expr::rule("member")])),
+                Expr::literal("}"),
             ]),
         )
         .production(
@@ -114,7 +109,7 @@ pub fn grammar() -> Grammar {
                 Expr::rule("value"),
             ]),
         )
-        // 数组：空 与 非空
+        // 数组：空 与 非空，重复同样写在容器产生式里
         .production(
             "array",
             Expr::seq([Expr::literal("["), Expr::literal("]")]),
@@ -123,17 +118,9 @@ pub fn grammar() -> Grammar {
             "array",
             Expr::seq([
                 Expr::literal("["),
-                Expr::rule("elements"),
-                Expr::literal("]"),
-            ]),
-        )
-        .production("elements", Expr::rule("value"))
-        .production(
-            "elements",
-            Expr::seq([
-                Expr::rule("elements"),
-                Expr::literal(","),
                 Expr::rule("value"),
+                Expr::star(Expr::seq([Expr::literal(","), Expr::rule("value")])),
+                Expr::literal("]"),
             ]),
         )
         .build()
@@ -156,18 +143,26 @@ pub fn semantics() -> Semantics {
         .rule("json", pass_through)
         .rule("value", pass_through)
         .rule("object", object)
-        .rule("members", members)
         .rule("member", member)
         .rule("array", array)
-        .rule("elements", elements)
 }
 
 /// 装好的 JSON 分析器：`analyze` 一次，得到一个 [`Value`] 树。
 ///
-/// 每次调用都会重新编译那三条正则；JSON 配置只在启动时读一次，
-/// 这点开销换来的是一条干净的、无全局状态的公开接口。
+/// 每次调用都会重新编译词法与文法；需要"一份装配、反复使用"时自己保存返回值，
+/// 或用 [`super::parse`]（它内部用的是单例）。
 pub fn analyzer() -> Analyzer {
     Analyzer::new(rules(), grammar(), semantics()).expect("the JSON grammar must be consistent")
+}
+
+/// `json::parse` 用的单例。
+///
+/// [`Analyzer`] 是 `Send + Sync`（动作表用 `Arc`），所以能放进 `OnceLock`。
+/// 没有这一步，每解析一段 JSON 都要重新编译整份词法与文法——小输入上这笔开销
+/// 比解析本身还大。
+pub(crate) fn shared() -> &'static Analyzer {
+    static ANALYZER: OnceLock<Analyzer> = OnceLock::new();
+    ANALYZER.get_or_init(analyzer)
 }
 
 // ---------------------------------------------------------------------------
@@ -183,14 +178,17 @@ fn pass_through(values: &[Value]) -> Result<Value, String> {
 }
 
 /// `object`：空对象得到空字典，非空对象把成员对塞进字典。
+///
+/// 非空形态的参数是 `["{", pair, ",", pair, …, "}"]`——重复部分被摊平进来，
+/// 所以按下标隔一个取一个。
 fn object(values: &[Value]) -> Result<Value, String> {
     match values {
         // "{" "}"
         [_, _] => Ok(Value::map()),
-        // "{" members "}"
-        [_, Value::List(pairs), _] => {
+        // "{" member ("," member)* "}"
+        [_, pairs @ .., _] => {
             let mut map = BTreeMap::new();
-            for pair in pairs {
+            for pair in pairs.iter().step_by(2) {
                 let [Value::Text(key), value] = pair
                     .as_list()
                     .ok_or_else(|| "internal error: a member is not a [key, value] pair".to_string())?
@@ -206,21 +204,6 @@ fn object(values: &[Value]) -> Result<Value, String> {
     }
 }
 
-/// `members`：第一条产生式起一个列表，左递归版本往后追加。
-fn members(values: &[Value]) -> Result<Value, String> {
-    match values {
-        // members ::= member
-        [pair] => Ok(Value::List(vec![pair.clone()])),
-        // members ::= members "," member
-        [Value::List(pairs), _, pair] => {
-            let mut pairs = pairs.clone();
-            pairs.push(pair.clone());
-            Ok(Value::List(pairs))
-        }
-        _ => Err("internal error: unexpected shape for the right-hand side of `members`".to_string()),
-    }
-}
-
 /// `member ::= @string ":" value` → `[key, value]`。
 fn member(values: &[Value]) -> Result<Value, String> {
     match values {
@@ -229,29 +212,14 @@ fn member(values: &[Value]) -> Result<Value, String> {
     }
 }
 
-/// `array`：空数组得到空列表，非空数组直接收下元素列表。
+/// `array`：空数组得到空列表，非空数组收下元素。
 fn array(values: &[Value]) -> Result<Value, String> {
     match values {
         // "[" "]"
         [_, _] => Ok(Value::List(Vec::new())),
-        // "[" elements "]"
-        [_, Value::List(items), _] => Ok(Value::List(items.clone())),
+        // "[" value ("," value)* "]"
+        [_, items @ .., _] => Ok(Value::List(items.iter().step_by(2).cloned().collect())),
         _ => Err("internal error: unexpected shape for the right-hand side of `array`".to_string()),
-    }
-}
-
-/// `elements`：与 `members` 同构，只是元素不是键值对。
-fn elements(values: &[Value]) -> Result<Value, String> {
-    match values {
-        // elements ::= value
-        [value] => Ok(Value::List(vec![value.clone()])),
-        // elements ::= elements "," value
-        [Value::List(items), _, value] => {
-            let mut items = items.clone();
-            items.push(value.clone());
-            Ok(Value::List(items))
-        }
-        _ => Err("internal error: unexpected shape for the right-hand side of `elements`".to_string()),
     }
 }
 

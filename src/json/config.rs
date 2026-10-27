@@ -35,6 +35,7 @@ const LEGACY_VERSION: u32 = 1;
 pub struct Config {
     /// 编辑器用的 schema 路径，加载时忽略，但会原样保留以便回写。
     pub schema: Option<String>,
+    /// 配置格式版本；当前只接受 2。
     pub version: u32,
     /// 词法规则（token 类别）。
     pub rules: Vec<Rule>,
@@ -63,6 +64,7 @@ impl Config {
         Self::from_value(&value)
     }
 
+    /// 从文件读配置。
     pub fn load(path: impl AsRef<Path>) -> Result<Self, ConfigError> {
         let path = path.as_ref();
         let text = fs::read_to_string(path).map_err(|source| ConfigError::Io {

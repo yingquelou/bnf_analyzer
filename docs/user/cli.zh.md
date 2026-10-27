@@ -36,6 +36,7 @@ options:
   -t, --tokens          print the token stream only, without parsing
       --bnf             print the current grammar as BNF (read-only view)
       --compact         print compact JSON (two-space indentation by default)
+      --encoding <enc>  how to read the file: utf8 (default), latin1, or auto
   -h, --help            print this help
   -V, --version         print version
 ```
@@ -44,6 +45,7 @@ options:
 - `-` 表示标准输入，也可以干脆不写文件参数。
 - `--bnf` 不需要源码：它只渲染文法，给了文件也不会读。
 - 配置默认是**编译期内嵌**的 `postscript.json`，与工作目录无关；`-c` 才读磁盘。
+- `--encoding` 决定文件怎么变成文本，默认只吃 UTF-8，见 §3。
 
 ---
 
@@ -150,6 +152,19 @@ dictionary, hexstring and 7 more
 - 词法错误会指出具体字符：`line 1, column 1: no rule matches character '('`；
 - 期望列表最多显示 8 项，超出后写 `and N more`；
 - 列表里只会出现用户可见的符号——文法内部的辅助产生式被过滤掉；
+- 插入符按**终端列**对齐：tab 展到下一个 8 的倍数，CJK 之类宽字符算两列，
+  所以带缩进的 PostScript 片段也能指准；
+- PostScript 是字节语言，文件不一定是 UTF-8。默认只按 UTF-8 解码，失败时报出字节偏移：
+
+```text
+$ bnf-analyzer latin1.ps
+failed to read latin1.ps: invalid UTF-8 at byte 4
+  pass --encoding latin1 to read it as Latin-1, or --encoding auto to detect
+```
+
+  `--encoding latin1` 把每个字节直接当一个码点（ISO-8859-1 与 Unicode 前 256 个码点逐一对齐）；
+  `--encoding auto` 先试 UTF-8，失败再按 latin1 读。注意 `span` 的字节偏移按**解码后的文本**算——
+  latin1 里 0x80–0xFF 的字节会变成两个 UTF-8 字节，偏移因此与文件里的位置不同；行号与列号不受影响。
 - 配置错误发生在读源码之前，因此没有插入符：
 
 ```text

@@ -10,6 +10,7 @@ pub struct Document {
 }
 
 impl Document {
+    /// 把一个值包成文档（没有分析器时手工构造也能用）。
     pub fn new(root: Value) -> Self {
         Self { root }
     }
@@ -19,7 +20,7 @@ impl Document {
         self.root.as_rule()
     }
 
-    /// 按前序遍历所有值（含语法树节点与列表元素）。
+    /// 按前序遍历所有值（含语法树节点、列表元素与字典的值）。
     ///
     /// 这是最省事的"看一眼"接口：不能剪枝、不区分节点类型、回调里拿到的引用也不能
     /// 带出闭包。需要这些能力时用访问者：[`Document::accept`] +
@@ -48,6 +49,12 @@ fn walk_value<F: FnMut(&Value)>(value: &Value, visit: &mut F) {
         Value::List(items) => {
             for item in items {
                 walk_value(item, visit);
+            }
+        }
+        // 字典按 key 的字典序（`BTreeMap`），与访问者 `accept` 的口径一致。
+        Value::Map(entries) => {
+            for value in entries.values() {
+                walk_value(value, visit);
             }
         }
         _ => {}

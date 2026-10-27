@@ -47,3 +47,40 @@ fn document_new_wraps_value_without_analyzer() {
     assert_eq!(document.token_count(), 0);
     assert!(document.rule().is_some());
 }
+
+#[test]
+fn walk_visits_dictionary_values() {
+    // 动作可以产出字典；`walk` 与访问者必须看到同一批值，否则漏掉动作组装的子树。
+    let mut entries = std::collections::BTreeMap::new();
+    entries.insert("k".to_string(), Value::Int(7));
+    let tree = Value::rule(
+        "program",
+        Span::new(0, 1, 1, 1),
+        vec![Value::Map(entries), Value::text("x")],
+    );
+    let document = Document::new(tree);
+
+    let mut walked = 0;
+    document.walk(|_| walked += 1);
+
+    struct Count(usize);
+    impl<'ast> crate::core::visit::Visitor<'ast> for Count {
+        fn visit(&mut self, _: &'ast Value) -> crate::core::visit::Flow {
+            self.0 += 1;
+            crate::core::visit::Flow::Continue
+        }
+    }
+    let mut counter = Count(0);
+    document.accept(&mut counter);
+
+    assert_eq!(walked, 4, "program + map + its value + text");
+    assert_eq!(walked, counter.0, "walk and the visitor must agree");
+}
+
+#[test]
+fn analyzer_is_send_and_sync() {
+    // 装配结果可以跨线程共享、放进 `static`/`OnceLock`；这条约束一旦丢掉就会静默回归。
+    fn check<T: Send + Sync>() {}
+    check::<Analyzer>();
+    check::<Document>();
+}

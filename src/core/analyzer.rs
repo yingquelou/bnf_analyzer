@@ -46,10 +46,12 @@ impl Analyzer {
         self.tokenizer.rules()
     }
 
+    /// 当前生效的文法（已降级、已检查）。
     pub fn grammar(&self) -> &Grammar {
         &self.grammar
     }
 
+    /// 当前生效的动作表。
     pub fn semantics(&self) -> &Semantics {
         &self.semantics
     }

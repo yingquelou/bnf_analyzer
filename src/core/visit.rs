@@ -351,6 +351,7 @@ impl<'ast> RuleCollector<'ast> {
         self.nodes.len()
     }
 
+    /// 是否一个都没收到。
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
@@ -372,22 +373,27 @@ pub struct TokenCollector<'ast> {
 }
 
 impl<'ast> TokenCollector<'ast> {
+    /// 空收集器。
     pub fn new() -> Self {
         Self { tokens: Vec::new() }
     }
 
+    /// 已收集的 token。
     pub fn tokens(&self) -> &[&'ast Token] {
         &self.tokens
     }
 
+    /// 取走收集结果。
     pub fn into_tokens(self) -> Vec<&'ast Token> {
         self.tokens
     }
 
+    /// 收集到的 token 数量。
     pub fn len(&self) -> usize {
         self.tokens.len()
     }
 
+    /// 是否一个都没收到。
     pub fn is_empty(&self) -> bool {
         self.tokens.is_empty()
     }

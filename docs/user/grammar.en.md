@@ -307,8 +307,8 @@ assert_eq!(
 
 Worth knowing:
 
-- actions are cached per **reduction point**, one reduction runs its action once; callbacks should be free of side
-  effects (do not accumulate external state inside them).
+- actions are cached per **reduction point**: a token action runs once per matched token, a rule action once per
+  reduction; callbacks should be free of side effects (do not accumulate external state inside them).
 - a production with a rule action no longer produces a `Value::Rule` node; `children` receives whatever the action
   returned.
 - an action returning `Err(String)` becomes `ParseError::RuleAction` / `TokenAction` with the failing position.

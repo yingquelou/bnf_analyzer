@@ -1,5 +1,8 @@
 // 中英双份正文：`docs/intro.zh.md` 与 `docs/intro.en.md` 拼在一起，由 `data-lang` 分成两块，
 // 页面末尾的切换器（`docs/theme/switcher.html`）只显示其中一块。手册页的装法见 `src/guide.rs` 的 `manual!`。
+#![forbid(unsafe_code)]
+// 公开面一律要有 `///`：文档是发布物的一部分，缺一条就别编译。
+#![deny(missing_docs)]
 #![doc = concat!(
     "<div class=\"lang\" data-lang=\"zh\">\n\n",
     include_str!("../docs/intro.zh.md"),

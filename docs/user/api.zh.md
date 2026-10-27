@@ -180,7 +180,8 @@ assert_eq!(document.root, Value::Int(6));
 
 要点：
 
-- **动作有缓存**：同一次归约的动作只执行一次，重复遍历不会重复调用。
+- **动作的调用次数是定数**：token 动作每个 token 匹配一次，语义动作每个归约点一次。
+  解析器内部会重复遍历同一批项，但归约结果按"归约点 + 结束位置"缓存，重复遍历不会再调一次。
   因此回调要当成纯函数：不要在里面积累外部状态。
 - **挂了动作就不再产出默认节点**。上面的 `program` 有语义动作，所以根是
   `Value::Int(6)` 而不是 `Value::Rule`；`number` 节点也同理。
@@ -612,20 +613,20 @@ assert_eq!(json::parse_with(&mine, "[1, 2]").expect("should be valid").as_list()
 ```text
 json ::= value ;
 value ::= object | array | @string | @number | "true" | "false" | "null" ;
-object ::= "{" "}" | "{" members "}" ;
-members ::= member | members "," member ;
+object ::= "{" "}" | "{" member ( "," member )* "}" ;
 member ::= @string ":" value ;
-array ::= "[" "]" | "[" elements "]" ;
-elements ::= value | elements "," value ;
+array ::= "[" "]" | "[" value ( "," value )* "]" ;
 ```
 
 几个值得抄的点：
 
 - **词法只有三条规则**：空白（`skip`）、字符串、数字。`true`/`false`/`null` 与
   `{ } [ ] , :` 都是字面量终结符，`Grammar::literals()` 在装配时自动派生成词法规则。
-- **左递归累积列表**：`members ::= member | members "," member` 比 `star` 更好写动作——
-  每次归约只拿"已累积的列表 + 一个元素"，不必和摊平后的参数序列猜位置。
-- **空容器单独一条产生式**：`"{" "}"` 与 `"{" members "}"` 形状不同，动作靠参数个数就能分辨。
+- **重复写在容器自己的产生式里**：`"{" member ( "," member )* "}"`，不另立一条
+  `members` 规则。单独成规则也能解析，但那条规则在每个前缀位置都会完成一次，
+  容器每多一个成员就要重建一次已累积的列表，规模一上去就是平方；写在容器里，
+  容器只在收尾处完成一次。`*` 展平出来的参数夹着逗号，动作按下标隔一个取。
+- **空容器单独一条产生式**：`"{" "}"` 与非空形态形状不同，动作靠参数个数就能分辨。
 - **错误位置免费**：token 动作返回 `Err(String)` 时，解析器附上该 token 的 span，
   `json::parse` 再把它搬成 `JsonError { line, column, message }`。
 
@@ -638,6 +639,9 @@ elements ::= value | elements "," value ;
 
 - **Earley，不改写文法**：左递归、ε 产生式、歧义都能直接吃。
   代价是最坏 O(n³)，以及**歧义时只返回最先完成的推导**，不枚举全部解析。
+  重复结构（`star` / `plus`）降级成左递归，再加上"识别阶段不复制已累积的子值"，
+  一段 n 个元素的列表是线性代价（1001 token 的 PostScript 约 14 ms）；
+  最坏 O(n³) 只在**高度歧义**的文法上出现，普通配置不必担心。
 - **没有错误恢复**：语法错误直接返回第一个失败点，不做"跳过 token 继续"。
   需要多错误报告时，应在调用方按行/按块分段分析。
 - **动作必须纯**：归约缓存假设同一归约点的动作只执行一次、结果可复用。
@@ -645,11 +649,13 @@ elements ::= value | elements "," value ;
 - **默认配置的字符串只支持一层嵌套**：`(a (b) c)` 可以，`(a (b (c)) d)` 会词法失败。
   这正好是"token 动作"的用武之地——在动作里自己做括号配对，或者把 `string` 换成
   一个能处理任意深度的扫描器钩子。
+- **`Analyzer` 是 `Send + Sync`**：动作表用 `Arc` 共享，回调要求 `Send + Sync`，所以装好的分析器
+  可以跨线程共享，也能放进 `static` / `OnceLock` 复用一份装配结果（`json::parse` 内部就这么做）。
 - **`Analyzer` 可复用**：文法与规则在装配后不可变，`analyze` 不共享可变状态，
   同一个实例可以连续分析多份源码；`Parser` 本身是零大小类型、无状态。
 - **访问者是只读的**：`Visitor` 拿到的是 `&'ast`。要改写树，就在遍历里收集
   `(&Span, …)` 再自己重建，或者用 `Value` 的 `Clone` + 手工递归。
 - **遍历顺序是深度优先、文档顺序**：`Rule` 与 `List` 按元素顺序；
   `Map` 是 `BTreeMap`，因此按 key 的字典序，而不是插入顺序。
-- **依赖面很小**：`Cargo.lock` 里只会多出 `regex` 一个 crate，不会冒出 JSON 库或
-  错误处理框架。
+- **依赖面很小**：默认构建与 `json` 构建的 `Cargo.lock` 里只会多出 `regex` 一个 crate，不会冒出
+  JSON 库或错误处理框架；`cli` 另外带一个 `unicode-width`（只用于把报错的插入符按终端列对齐）。

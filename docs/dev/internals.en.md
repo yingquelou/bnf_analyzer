@@ -40,6 +40,7 @@ JSON:  Config.grammar.parse_grammar()  ── GrammarSpec::from_spec
                               │  4 expand sugar one by one, appending $starN/$plusN/$optN/$groupN
                               │  5 collect Expr::Literal (for Rules::with_literals)
                               │  6 check that nonterminals referenced by Expr::Rule exist (UnknownSymbol)
+                              │  7 check every nonterminal can derive a terminal string (NonProductive)
                               └──► Grammar
 ```
 
@@ -54,11 +55,20 @@ check happens in `Analyzer::new` while the token table is assembled (`UnknownTok
 
 | spelling | expansion |
 |---|---|
-| `star(a)` | `$starN ::= a $starN` + `$starN ::= ε` |
-| `plus(a)` | `$plusN ::= a $starM` (reusing the `$starM` from `star`) |
+| `star(a)` | `$starN ::= $starN a` + `$starN ::= ε` (left-recursive) |
+| `plus(a)` | `$plusN ::= a` + `$plusN ::= $plusN a` (left-recursive) |
 | `opt(a)` | `$optN ::= a` + `$optN ::= ε` |
 | grouping (`seq`/`alt` as a sub-item) | one `$groupN` (which may hold several alternatives) |
 | `seq([])` | a single production with no items (ε), no helper symbol |
+
+Repetition **must** be left-recursive: the right-recursive shape (`$starN ::= a $starN`) is the worst case for
+Earley — every reduction copies "all remaining child values" up to the parent, giving O(n³) time and O(n²) memory.
+Left recursion only links one more node onto the yield chain per step (see §6), and the flattened order is
+unchanged.
+
+Grouping does **not** distribute either: a `seq` holding n two-way alternatives would expand to 2ⁿ productions;
+now each sub-item lowers to its own `$groupN`, so the size stays proportional to the expression.
+`nested_alternatives_stay_linear` guards this.
 
 A synthetic production (`synthetic = true`) has to be hidden in **three places**, otherwise the user sees
 implementation details:
@@ -110,8 +120,21 @@ parse it back.
 - The parser is Earley: left recursion, ε productions and ambiguity all work without rewriting the grammar.
   Worst case is O(n³); with an ambiguity it takes the **first completed derivation** and does not enumerate every
   parse.
-- Reduction actions are cached by "reduction point + end position", so one reduction runs its action once; callbacks
-  must therefore be free of side effects.
+- **Recognition does not materialize semantic values**: what a matched symbol yields is a lazily flattened
+  concatenation tree (the `Run` type in `parser.rs`: `Arc` nodes, either a leaf or a concatenation). Concatenation
+  is O(1), each node caches the span it covers, and the tree is only flattened into `&[Value]` when something
+  actually needs it.
+- Before reducing, the parser checks whether any parent in `chart[origin]` is waiting for this nonterminal;
+  **if nobody is waiting and this is not the accepting position, no value is built**. A start symbol such as
+  `program ::= value*` completes at every prefix position, and without this check each completion would flatten the
+  whole prefix — pure O(n²) waste.
+- Result with the built-in PostScript configuration: 1001 tokens went from 5.5 s to 14 ms, 64001 tokens take about
+  1 s (linear). `src/core/parser.rs::parses_long_repetitions` and
+  `src/json/tests.rs::parses_long_arrays_and_objects` guard it.
+- The concatenation tree is as deep as the input is long, so `Node::drop` releases it with an explicit work stack —
+  the default recursive drop overflows the stack after a few thousand tokens.
+- Reduction actions are cached by "reduction point + end position", so one reduction runs its action once, and a
+  reduction no derivation adopts runs no action at all. Callbacks must therefore be free of side effects.
 - Lexical classes and grammar symbols **never infer one another**: `Rule` only looks in the production table,
   `Token` only in the token table.
 - `Span.start/end` are byte offsets, half-open; `line/column` count characters and are 1-based. The EOF span is a

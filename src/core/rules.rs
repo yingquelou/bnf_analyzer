@@ -204,13 +204,19 @@ impl Rules {
             if source.is_empty() {
                 return Err(RulesError::EmptyPattern(rule.name.clone()));
             }
+            let regex = compile_regex(&rule.name, &source)?;
+            // 能匹配空串的规则会让扫描器停在原地。这里就拒绝，别等到喂第一份源码时
+            // 才报"扫描无法推进"——那时用户已经离配置很远。
+            if regex.is_match("") {
+                return Err(RulesError::EmptyPattern(rule.name.clone()));
+            }
             compiled.push(CompiledRule {
                 slot: if rule.skip {
                     Slot::Skip
                 } else {
                     Slot::Emit(rule.name.clone())
                 },
-                regex: compile_regex(&rule.name, &source)?,
+                regex,
                 priority: rule.priority,
                 order,
                 source,
@@ -287,7 +293,7 @@ pub enum RulesError {
     EmptyName,
     /// 规则名重复。
     DuplicateName(String),
-    /// 正则能匹配空串。
+    /// 正则为空或能匹配空串（会让扫描器无法推进）。
     EmptyPattern(String),
 }
 
@@ -304,7 +310,10 @@ impl fmt::Display for RulesError {
             } => write!(f, "failed to compile regex ({owner}: {pattern}): {source}"),
             RulesError::EmptyName => f.write_str("rule name must not be empty"),
             RulesError::DuplicateName(name) => write!(f, "duplicate rule name: {name}"),
-            RulesError::EmptyPattern(name) => write!(f, "empty regex (rule {name})"),
+            RulesError::EmptyPattern(name) => write!(
+                f,
+                "rule {name} matches an empty string, the scanner could not advance"
+            ),
         }
     }
 }

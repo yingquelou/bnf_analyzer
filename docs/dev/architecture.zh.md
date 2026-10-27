@@ -14,7 +14,7 @@
 |---|---|---|
 | `core`（默认） | 词法、文法、Earley、`Value`、访问者、`Analyzer::new` | `regex` |
 | `json` | 自举的 JSON 文法（解析 + 输出）、`Config`（含内置配置）、`Analyzer::from_config` | `core` |
-| `cli` | `bnf-analyzer` 可执行文件（`src/main.rs`） | `json` |
+| `cli` | `bnf-analyzer` 可执行文件（`src/main.rs`）；`--encoding` 与插入符对齐 | `json` + 可选 `unicode-width` |
 
 ```text
 cargo add bnf_analyzer                 # 只有 core，不拉 JSON 库，也不产出可执行文件
@@ -24,7 +24,7 @@ cargo add bnf_analyzer --features cli  # 追加可执行文件
 
 关键性质：**`json` 层不是"引入了一个 JSON 库"，而是"用 core 写的一个应用"**。
 JSON 的解析走本库自己的 Earley 流水线（`src/json/grammar.rs`：三条词法规则 +
-十一条产生式 + 一组动作），输出是手写的递归下降写器（`src/json/write.rs`）。
+七条产生式 + 一组动作），输出是手写的递归下降写器（`src/json/write.rs`）。
 所以它既是配置加载器，也是"如何用 core 写一门格式"的完整示例。
 
 ---
@@ -103,7 +103,8 @@ examples/
 ### 3.2 第三方依赖只有 `regex`
 
 错误类型一律手写 `Display` + `std::error::Error`（不用 `thiserror`），JSON 读写自己实现
-（不用 `serde`）。两条测试分别查源码里的 `use` 根白名单与 `Cargo.toml` 的 `[dependencies]`。
+（不用 `serde`）。两条测试分别查源码里的 `use` 根白名单与 `Cargo.toml` 的 `[dependencies]`：
+除 `regex` 之外的依赖必须 `optional = true`，且只有 `cli` 能打开（目前就一条 `unicode-width`）。
 
 ### 3.3 名字只留在自己那一层
 
@@ -212,8 +213,8 @@ rustdoc 本身也分界：crate 根与各模块开头的 `//!` / `///` 面向**�
 ## 5. 测试矩阵
 
 ```text
-$ cargo test                          # core：49 个单元测试 + actions + code_language + core_isolation + docs_layout + 12 项文档示例（共 88 项）
-$ cargo test --all-features           # 追加 json / cli 的全部内容（共 205 项）
+$ cargo test                          # core：56 个单元测试 + actions + code_language + core_isolation + docs_layout + 12 项文档示例（共 96 项）
+$ cargo test --all-features           # 追加 json / cli 的全部内容（共 222 项）
 $ cargo test --all-features --doc     # 只跑文档里的示例（50 项，中英各一份）
 $ cargo test --no-default-features    # 确认 core 不靠 json 也能活（与默认等价）
 ```
@@ -228,7 +229,7 @@ $ cargo test --no-default-features    # 确认 core 不靠 json 也能活（与�
 | `tests/grammar_forms.rs` | `docs/user/grammar.zh.md` 每一行对照的可执行版本 |
 | `tests/config_forms.rs` | schema 与代码常量 `PATTERN_KEYS` / `EXPR_KEYS` 一致、示例配置合规 |
 | `tests/visitor.rs` | `Visitor` 的 `Flow` 语义、`enter`/`leave` 配对、收集器 |
-| `tests/core_isolation.rs` | 3.1–3.3：core 自包含、依赖只有 `regex`、名字不越层 |
+| `tests/core_isolation.rs` | 3.1–3.3：core 自包含、依赖只有 `regex`（其余必须 optional 且归 `cli`）、名字不越层 |
 | `tests/code_language.rs` | 3.4：代码英文、注释中文 |
 | `tests/docs_layout.rs` | 文档分家、中英成对与代码块对称、rustdoc 装配、rustdoc 不指仓库路径 |
 
@@ -277,7 +278,7 @@ Windows 上增量编译偶尔会报 `os error 5`（删不掉旧的 `.lock`）：
 
 README 面向使用者，不写这些；本节是发布流程的唯一底本。
 
-**首次发布手动**：`cargo login` → `cargo publish` → `git tag v0.1.0 && git push origin v0.1.0`。
+**首次发布手动**：`cargo login` → `cargo publish` → `git tag v0.2.0 && git push origin v0.2.0`。
 之后每次发版只打标签，交给 `.github/workflows/release.yml`：
 
 1. 改 `Cargo.toml` 的 `version`，`cargo test --all-features` 通过后提交；

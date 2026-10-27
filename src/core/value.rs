@@ -12,12 +12,19 @@ use crate::core::tokenizer::{Span, Token};
 /// 一个语义值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
+    /// 空值。
     Null,
+    /// 布尔值。
     Bool(bool),
+    /// 整数。
     Int(i64),
+    /// 浮点数。
     Real(f64),
+    /// 字符串。
     Text(String),
+    /// 列表。
     List(Vec<Value>),
+    /// 字典；键有序，比较与输出都稳定。
     Map(BTreeMap<String, Value>),
     /// 叶子：原始 token（未被 token 动作改写时）。
     Token(Token),
@@ -30,28 +37,34 @@ pub enum Value {
 pub struct RuleNode {
     /// 产生式左部。
     pub rule: String,
+    /// 覆盖的源码区间（与 `children` 的首尾一致）。
     pub span: Span,
     /// 右部各符号对应的值；`star` / `plus` / `opt` 写法的重复层已被摊平，这里是平的。
     pub children: Vec<Value>,
 }
 
 impl Value {
+    /// 由字符串构造。
     pub fn text(value: impl Into<String>) -> Self {
         Value::Text(value.into())
     }
 
+    /// 由整数构造。
     pub fn int(value: i64) -> Self {
         Value::Int(value)
     }
 
+    /// 由浮点数构造。
     pub fn real(value: f64) -> Self {
         Value::Real(value)
     }
 
+    /// 由布尔值构造。
     pub fn boolean(value: bool) -> Self {
         Value::Bool(value)
     }
 
+    /// 由列表构造。
     pub fn list(values: Vec<Value>) -> Self {
         Value::List(values)
     }
@@ -61,10 +74,12 @@ impl Value {
         Value::Map(BTreeMap::new())
     }
 
+    /// 由原始 token 构造。
     pub fn token(token: Token) -> Self {
         Value::Token(token)
     }
 
+    /// 由产生式名、区间与子值构造默认语法树节点。
     pub fn rule(rule: impl Into<String>, span: Span, children: Vec<Value>) -> Self {
         Value::Rule(RuleNode {
             rule: rule.into(),
@@ -73,10 +88,12 @@ impl Value {
         })
     }
 
+    /// 是否为空值。
     pub fn is_null(&self) -> bool {
         matches!(self, Value::Null)
     }
 
+    /// 取出布尔值。
     pub fn as_bool(&self) -> Option<bool> {
         match self {
             Value::Bool(value) => Some(*value),
@@ -84,6 +101,7 @@ impl Value {
         }
     }
 
+    /// 取出整数；浮点数不会被截断成整数。
     pub fn as_int(&self) -> Option<i64> {
         match self {
             Value::Int(value) => Some(*value),
@@ -91,6 +109,7 @@ impl Value {
         }
     }
 
+    /// 取出浮点数；整数会提升成 `f64`。
     pub fn as_real(&self) -> Option<f64> {
         match self {
             Value::Real(value) => Some(*value),
@@ -99,6 +118,7 @@ impl Value {
         }
     }
 
+    /// 取出字符串。
     pub fn as_text(&self) -> Option<&str> {
         match self {
             Value::Text(value) => Some(value),
@@ -106,6 +126,7 @@ impl Value {
         }
     }
 
+    /// 取出列表。
     pub fn as_list(&self) -> Option<&[Value]> {
         match self {
             Value::List(values) => Some(values),
@@ -113,6 +134,7 @@ impl Value {
         }
     }
 
+    /// 取出字典。
     pub fn as_map(&self) -> Option<&BTreeMap<String, Value>> {
         match self {
             Value::Map(values) => Some(values),
@@ -120,6 +142,7 @@ impl Value {
         }
     }
 
+    /// 取出原始 token。
     pub fn as_token(&self) -> Option<&Token> {
         match self {
             Value::Token(token) => Some(token),
@@ -127,6 +150,7 @@ impl Value {
         }
     }
 
+    /// 取出默认语法树节点。
     pub fn as_rule(&self) -> Option<&RuleNode> {
         match self {
             Value::Rule(node) => Some(node),

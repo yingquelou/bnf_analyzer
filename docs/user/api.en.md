@@ -184,7 +184,9 @@ assert_eq!(document.root, Value::Int(6));
 
 The key points:
 
-- **actions are cached**: the action for one reduction runs once, so repeated traversal does not call it again.
+- **the number of action calls is fixed**: a token action runs once per matched token, a rule action once per
+  reduction. The parser does revisit the same items internally, but reductions are cached by "reduction point plus
+  end position", so a revisit never calls the action again.
   Treat callbacks as pure functions: do not accumulate external state inside them.
 - **an action replaces the default node**. The `program` above has a rule action, so the root is `Value::Int(6)`
   rather than a `Value::Rule`; the same goes for the `number` node.
@@ -623,22 +625,21 @@ That grammar looks like this (the output of `to_bnf()`, productions with the sam
 ```text
 json ::= value ;
 value ::= object | array | @string | @number | "true" | "false" | "null" ;
-object ::= "{" "}" | "{" members "}" ;
-members ::= member | members "," member ;
+object ::= "{" "}" | "{" member ( "," member )* "}" ;
 member ::= @string ":" value ;
-array ::= "[" "]" | "[" elements "]" ;
-elements ::= value | elements "," value ;
+array ::= "[" "]" | "[" value ( "," value )* "]" ;
 ```
 
 A few things worth copying:
 
 - **only three lexical rules**: whitespace (`skip`), strings, numbers. `true`/`false`/`null` and `{ } [ ] , :` are
   all literal terminals, and `Grammar::literals()` derives their lexical rules during assembly.
-- **left recursion accumulates the list**: `members ::= member | members "," member` makes the action easier to
-  write than `star` does — each reduction only gets "the list so far + one element", with no need to guess offsets
-  in a flattened argument sequence.
-- **an empty container gets its own production**: `"{" "}"` and `"{" members "}"` have different shapes, so the
-  action can tell them apart by the number of arguments.
+- **the repetition lives inside the container production**: `"{" member ( "," member )* "}"`, with no separate
+  `members` rule. A separate rule parses too, but it completes at every prefix position, so the container rebuilds
+  its accumulated list once per member — quadratic as soon as the input grows. Inside the container, the container
+  completes once. The flattened `*` arguments contain the commas, so the action takes every other index.
+- **an empty container gets its own production**: `"{" "}"` and the non-empty shape differ, so the action can tell
+  them apart by the number of arguments.
 - **positions for free**: when a token action returns `Err(String)`, the parser attaches that token's span, and
   `json::parse` turns it into `JsonError { line, column, message }`.
 
@@ -651,7 +652,9 @@ so syntax errors and configuration errors in `postscript.json` share one set of 
 
 - **Earley, without rewriting the grammar**: left recursion, ε productions, and ambiguity all work directly. The
   price is a worst case of O(n³), and that **with an ambiguity only the first completed derivation is returned**,
-  never an enumeration of every parse.
+  never an enumeration of every parse. Repetition (`star` / `plus`) lowers to left recursion, and recognition does
+  not copy accumulated child values, so a list of n elements is linear (1001 tokens of PostScript take about 14 ms).
+  The O(n³) worst case only shows up in **highly ambiguous** grammars, not in ordinary configurations.
 - **no error recovery**: a syntax error returns the first failure point; there is no "skip a token and carry on".
   If you need multiple errors, analyze line by line or block by block on the caller's side.
 - **actions must be pure**: the reduction cache assumes the action for one reduction point runs once and its result
@@ -660,11 +663,15 @@ so syntax errors and configuration errors in `postscript.json` share one set of 
 - **strings in the default configuration allow one level of nesting**: `(a (b) c)` works, `(a (b (c)) d)` fails in
   the tokenizer. That is exactly where a "token action" earns its keep — do the bracket matching inside the action,
   or replace `string` with a scanner hook that handles arbitrary depth.
+- **`Analyzer` is `Send + Sync`**: the action table is shared through `Arc` and callbacks must be `Send + Sync`,
+  so an assembled analyzer can be shared across threads and kept in a `static` / `OnceLock`
+  (`json::parse` does exactly that internally).
 - **`Analyzer` is reusable**: rules and grammar are immutable once assembled, `analyze` shares no mutable state, and
   one instance can analyze many sources in a row; `Parser` itself is a zero-sized, stateless type.
 - **visitors are read-only**: a `Visitor` gets `&'ast`. To rewrite the tree, collect `(&Span, …)` during the walk
   and rebuild it yourself, or use `Clone` on `Value` and recurse by hand.
 - **traversal is depth-first, in document order**: `Rule` and `List` follow element order; `Map` is a `BTreeMap`,
   so it follows the key order, not insertion order.
-- **the dependency surface is tiny**: only one extra crate (`regex`) shows up in `Cargo.lock`, with no JSON library
-  and no error-handling framework.
+- **the dependency surface is tiny**: the default and `json` builds add only one crate (`regex`) to `Cargo.lock`,
+  with no JSON library and no error-handling framework; `cli` adds one more (`unicode-width`), used only to align
+  the error caret by terminal column.

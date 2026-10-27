@@ -3,6 +3,8 @@
 //! 覆盖：动作取值、默认语法树兜底、动作报错、字典/列表组装、文法校验。
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use bnf_analyzer::core::{AnalyzeError, Analyzer};
 use bnf_analyzer::core::grammar::{Expr, Grammar};
@@ -21,7 +23,7 @@ fn rules() -> Rules {
 }
 
 /// `expr ::= number | expr "+" expr`，靠动作做常量折叠。
-fn calculator(counter: Option<std::rc::Rc<std::cell::Cell<usize>>>) -> Analyzer {
+fn calculator(counter: Option<Arc<AtomicUsize>>) -> Analyzer {
     let grammar = Grammar::builder()
         .start("program")
         .production("program", Expr::rule("expr"))
@@ -58,7 +60,7 @@ fn calculator(counter: Option<std::rc::Rc<std::cell::Cell<usize>>>) -> Analyzer 
 
     if let Some(counter) = counter {
         semantics = semantics.rule("expr", move |values| {
-            counter.set(counter.get() + 1);
+            counter.fetch_add(1, Ordering::Relaxed);
             match values {
                 [Value::Int(value)] => Ok(Value::Int(*value)),
                 _ => Err("the counter version takes a single value".to_string()),
@@ -81,14 +83,42 @@ fn token_action_and_semantic_action_compute_values() {
 
 #[test]
 fn actions_are_cached_per_reduction() {
-    use std::cell::Cell;
-    use std::rc::Rc;
-
-    let counter = Rc::new(Cell::new(0));
-    let analyzer = calculator(Some(Rc::clone(&counter)));
+    let counter = Arc::new(AtomicUsize::new(0));
+    let analyzer = calculator(Some(Arc::clone(&counter)));
     analyzer.analyze("1").expect("analysis should succeed");
     // `1` 只有一个 expr 归约点，即使分析器内部重复遍历，动作也只执行一次。
-    assert_eq!(counter.get(), 1);
+    assert_eq!(counter.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn token_actions_run_once_per_token() {
+    // 解析器内部会重复遍历同一批项（`while changed` 会重跑集合）。token 动作必须只在
+    // 真正插入新项时执行一次，否则计数类动作会翻倍，大输入上也是白白多跑一遍。
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&calls);
+    let semantics = Semantics::new().token("number", move |token| {
+        counter.fetch_add(1, Ordering::Relaxed);
+        token
+            .text
+            .parse::<i64>()
+            .map(Value::Int)
+            .map_err(|error| error.to_string())
+    });
+    let grammar = Grammar::builder()
+        .start("program")
+        .production("program", Expr::plus(Expr::rule("value")))
+        .production("value", Expr::token("number"))
+        .build()
+        .expect("the grammar should be valid");
+    let analyzer =
+        Analyzer::new(rules(), grammar, semantics).expect("the configuration should be consistent");
+
+    analyzer.analyze("1 2 3").expect("analysis should succeed");
+    assert_eq!(
+        calls.load(Ordering::Relaxed),
+        3,
+        "each of the three tokens must invoke its token action exactly once"
+    );
 }
 
 #[test]

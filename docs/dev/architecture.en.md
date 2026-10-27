@@ -15,7 +15,7 @@ Three features stack along one line; they are not three separate products:
 |---|---|---|
 | `core` (default) | tokenizer, grammar, Earley, `Value`, visitors, `Analyzer::new` | `regex` |
 | `json` | the self-hosted JSON grammar (parse + write), `Config` (including the builtin configuration), `Analyzer::from_config` | `core` |
-| `cli` | the `bnf-analyzer` binary (`src/main.rs`) | `json` |
+| `cli` | the `bnf-analyzer` binary (`src/main.rs`); `--encoding` and caret alignment | `json` + optional `unicode-width` |
 
 ```text
 cargo add bnf_analyzer                 # core only: no JSON library pulled in, no binary produced
@@ -107,7 +107,8 @@ application written with core".
 
 Error types hand-write `Display` + `std::error::Error` (no `thiserror`), and JSON reading and writing are
 implemented here (no `serde`). Two tests check the `use` root whitelist in the source and the `[dependencies]`
-section of `Cargo.toml`.
+section of `Cargo.toml`: anything besides `regex` must be `optional = true` and only `cli` may turn it on
+(today that is exactly one entry, `unicode-width`).
 
 ### 3.3 Names stay in their own layer
 
@@ -227,9 +228,9 @@ language-less `docs/user/<name>.md`).
 ## 5. Test matrix
 
 ```text
-$ cargo test                          # core: 49 unit tests + actions + code_language + core_isolation + docs_layout + 12 doc examples (88 total)
-$ cargo test --all-features           # plus everything from json / cli (205 total)
-$ cargo test --all-features --doc     # only the examples in the docs (50, one set per language)
+$ cargo test                          # core: 56 unit tests + actions + code_language + core_isolation + docs_layout + 12 doc examples (96 total)
+$ cargo test --all-features           # plus everything from json / cli (222 total)
+$ cargo test --all-features --doc     # only the examples in the docs (52, one set per language)
 $ cargo test --no-default-features    # confirms core lives without json (same as the default)
 ```
 
@@ -244,7 +245,7 @@ Use `--all-features` before committing: a plain `cargo test` never runs the test
 | `tests/grammar_forms.rs` | an executable version of every row in `docs/user/grammar.zh.md` |
 | `tests/config_forms.rs` | the schema matches the `PATTERN_KEYS` / `EXPR_KEYS` constants, and the example configurations conform |
 | `tests/visitor.rs` | `Flow` semantics, `enter`/`leave` pairing, the collectors |
-| `tests/core_isolation.rs` | 3.1–3.3: core self-containment, `regex` as the only dependency, names staying in their layer |
+| `tests/core_isolation.rs` | 3.1–3.3: core self-containment, `regex` as the only dependency (everything else must be optional and belong to `cli`), names staying in their layer |
 | `tests/code_language.rs` | 3.4: code in English, comments in Chinese |
 | `tests/docs_layout.rs` | the docs split, the zh/en pairs and their symmetry, rustdoc assembly, rustdoc not pointing at repository paths |
 
@@ -296,7 +297,7 @@ On Windows, incremental compilation occasionally reports `os error 5` (it cannot
 The README is written for users and does not cover any of this; this section is the single source of
 truth for the release process.
 
-**The first release is manual**: `cargo login` → `cargo publish` → `git tag v0.1.0 && git push origin v0.1.0`.
+**The first release is manual**: `cargo login` → `cargo publish` → `git tag v0.2.0 && git push origin v0.2.0`.
 After that, a release is just a tag, handled by `.github/workflows/release.yml`:
 
 1. bump `version` in `Cargo.toml`, make sure `cargo test --all-features` passes, commit;

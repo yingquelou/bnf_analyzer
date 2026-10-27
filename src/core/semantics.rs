@@ -8,8 +8,8 @@
 //!   （例如做常量折叠、构造 AST、组装字典）。
 //!
 //! 没有动作时，解析器自动产出默认语法树（[`Value::Token`] / [`Value::Rule`]）。
-//! 动作以"规则名 / 产生式名 / 字面量文本"为键，用 `Rc` 共享，可随
-//! [`Analyzer`](crate::core::Analyzer) 复用。
+//! 动作以"规则名 / 产生式名 / 字面量文本"为键，用 `Arc` 共享（要求 `Send + Sync`），
+//! 可随 [`Analyzer`](crate::core::Analyzer) 复用，也可以跨线程共享同一份装配结果。
 //!
 //! ```
 //! use bnf_analyzer::core::semantics::Semantics;
@@ -32,16 +32,16 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::core::tokenizer::Token;
 use crate::core::value::Value;
 
 /// token 动作：把匹配到的 token 折叠成一个值。
-pub type TokenAction = Rc<dyn Fn(&Token) -> Result<Value, String>>;
+pub type TokenAction = Arc<dyn Fn(&Token) -> Result<Value, String> + Send + Sync>;
 
 /// 语义动作：把产生式右部各符号的值折叠成一个值。
-pub type RuleAction = Rc<dyn Fn(&[Value]) -> Result<Value, String>>;
+pub type RuleAction = Arc<dyn Fn(&[Value]) -> Result<Value, String> + Send + Sync>;
 
 /// 动作集合。
 #[derive(Clone, Default)]
@@ -57,27 +57,33 @@ impl Semantics {
     }
 
     /// 注册 token 动作。键可以是词法类别名（`number`），也可以是字面量文本（`"{"`）。
+    ///
+    /// 动作要 `Send + Sync`——这样 [`Analyzer`](crate::core::Analyzer) 才能跨线程共享、
+    /// 放进 `static`/`OnceLock` 里复用一份装配结果。要往动作里带可变状态，用
+    /// `Arc<AtomicUsize>`、`Arc<Mutex<…>>` 这类线程安全容器。
     pub fn token<F>(mut self, name: impl Into<String>, action: F) -> Self
     where
-        F: Fn(&Token) -> Result<Value, String> + 'static,
+        F: Fn(&Token) -> Result<Value, String> + Send + Sync + 'static,
     {
-        self.tokens.insert(name.into(), Rc::new(action));
+        self.tokens.insert(name.into(), Arc::new(action));
         self
     }
 
-    /// 注册语义动作，键为产生式左部。
+    /// 注册语义动作，键为产生式左部。同样要求 `Send + Sync`。
     pub fn rule<F>(mut self, name: impl Into<String>, action: F) -> Self
     where
-        F: Fn(&[Value]) -> Result<Value, String> + 'static,
+        F: Fn(&[Value]) -> Result<Value, String> + Send + Sync + 'static,
     {
-        self.rules.insert(name.into(), Rc::new(action));
+        self.rules.insert(name.into(), Arc::new(action));
         self
     }
 
+    /// 按 token 类别或字面量原文查动作。
     pub fn token_action(&self, name: &str) -> Option<&TokenAction> {
         self.tokens.get(name)
     }
 
+    /// 按产生式左部查动作。
     pub fn rule_action(&self, name: &str) -> Option<&RuleAction> {
         self.rules.get(name)
     }
@@ -87,10 +93,12 @@ impl Semantics {
         self.tokens.is_empty() && self.rules.is_empty()
     }
 
+    /// 已注册的 token 动作名。
     pub fn token_names(&self) -> impl Iterator<Item = &String> {
         self.tokens.keys()
     }
 
+    /// 已注册的语义动作名。
     pub fn rule_names(&self) -> impl Iterator<Item = &String> {
         self.rules.keys()
     }

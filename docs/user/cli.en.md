@@ -37,6 +37,7 @@ options:
   -t, --tokens          print the token stream only, without parsing
       --bnf             print the current grammar as BNF (read-only view)
       --compact         print compact JSON (two-space indentation by default)
+      --encoding <enc>  how to read the file: utf8 (default), latin1, or auto
   -h, --help            print this help
   -V, --version         print version
 ```
@@ -46,6 +47,7 @@ options:
 - `--bnf` needs no source: it only renders the grammar and will not read a file you pass.
 - The configuration is **embedded at compile time** by default and does not depend on the working directory; only
   `-c` reads from disk.
+- `--encoding` decides how bytes become text; the default only accepts UTF-8, see §3.
 
 ---
 
@@ -157,6 +159,21 @@ dictionary, hexstring and 7 more
 - A lexical error names the exact character: `line 1, column 1: no rule matches character '('`;
 - the expected list shows at most 8 items, then `and N more`;
 - only symbols the user can see appear in that list — helper productions from inside the grammar are filtered out;
+- the caret is aligned by **terminal column**: a tab advances to the next multiple of 8, and wide characters such as
+  CJK count as two columns, so indented PostScript snippets still point at the right place;
+- PostScript is a byte language and its files are not necessarily UTF-8. The default decodes UTF-8 only, and a
+  failure reports the byte offset:
+
+```text
+$ bnf-analyzer latin1.ps
+failed to read latin1.ps: invalid UTF-8 at byte 4
+  pass --encoding latin1 to read it as Latin-1, or --encoding auto to detect
+```
+
+  `--encoding latin1` treats each byte as one code point (ISO-8859-1 lines up with the first 256 Unicode code
+  points); `--encoding auto` tries UTF-8 first and falls back to Latin-1. Note that the byte offsets in `span` are
+  counted on the **decoded text**: a 0x80–0xFF byte becomes two UTF-8 bytes under Latin-1, so offsets differ from
+  the positions in the file. Line and column numbers are unaffected.
 - configuration errors happen before the source is read, so there is no caret:
 
 ```text

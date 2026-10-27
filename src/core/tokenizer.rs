@@ -13,13 +13,18 @@ use crate::core::rules::{CompiledRule, Rules, Slot};
 /// 源码中的一段字节区间，附起始行列（1 基，列按字符计）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
+    /// 起始字节偏移（含）。
     pub start: usize,
+    /// 结束字节偏移（不含）。
     pub end: usize,
+    /// 起始行号（1 基）。
     pub line: usize,
+    /// 起始列号（1 基，按字符计）。
     pub column: usize,
 }
 
 impl Span {
+    /// 由字节偏移与起止行列构造。
     pub const fn new(start: usize, end: usize, line: usize, column: usize) -> Self {
         Self {
             start,
@@ -44,6 +49,7 @@ impl Span {
         self.end - self.start
     }
 
+    /// 是否为零宽区间。
     pub const fn is_empty(&self) -> bool {
         self.start == self.end
     }
@@ -62,10 +68,12 @@ pub struct Token {
     pub kind: String,
     /// 源码中的原始文本。
     pub text: String,
+    /// 在源码中的位置。
     pub span: Span,
 }
 
 impl Token {
+    /// 由类别、原文与位置构造。
     pub fn new(kind: impl Into<String>, text: impl Into<String>, span: Span) -> Self {
         Self {
             kind: kind.into(),
@@ -93,10 +101,12 @@ pub struct Tokenizer {
 }
 
 impl Tokenizer {
+    /// 用一套已编译的规则构造。
     pub fn new(rules: Rules) -> Self {
         Self { rules }
     }
 
+    /// 当前生效的规则。
     pub fn rules(&self) -> &Rules {
         &self.rules
     }
@@ -117,6 +127,8 @@ impl Tokenizer {
                 });
             };
             if len == 0 {
+                // 装配期（`Rules::from_rules`）已经拒绝了能匹配空串的规则，这里只是兜底：
+                // 万一将来有别的构造路径绕过校验，也不至于死循环。
                 return Err(LexError::EmptyMatch {
                     rule: rule.source.clone(),
                     span: cursor.span(0),
@@ -211,7 +223,7 @@ pub enum LexError {
     },
     /// 某条规则匹配到了空串，扫描无法推进。
     EmptyMatch {
-        /// 规则名。
+        /// 规则的正则源码（装配期本该拦住，留着便于对照配置）。
         rule: String,
         /// 匹配发生的位置。
         span: Span,
@@ -368,8 +380,13 @@ mod tests {
 
     #[test]
     fn rejects_empty_matching_rules() {
-        let rules = Rules::from_rules(vec![Rule::regex("zero", "a*")]).expect("the rules should be valid");
-        let error = Tokenizer::new(rules).tokenize("b").expect_err("should fail");
-        assert!(matches!(error, LexError::EmptyMatch { .. }));
+        // 装配期就拒绝：`a*` 能匹配空串，扫描器会停在原地。
+        let error = Rules::from_rules(vec![Rule::regex("zero", "a*")])
+            .expect_err("a rule that matches the empty string should be rejected");
+        assert!(matches!(
+            error,
+            crate::core::rules::RulesError::EmptyPattern(ref name) if name == "zero"
+        ));
+        assert!(error.to_string().contains("empty string"), "{error}");
     }
 }

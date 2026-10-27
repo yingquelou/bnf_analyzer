@@ -18,7 +18,7 @@ use super::grammar;
 /// assert_eq!(value.as_map().expect("对象").len(), 2);
 /// ```
 pub fn parse(text: &str) -> Result<Value, JsonError> {
-    parse_with(&grammar::analyzer(), text)
+    parse_with(grammar::shared(), text)
 }
 
 /// 用指定的分析器解析：文法是外部给的，本函数只负责把错误翻成 [`JsonError`]。

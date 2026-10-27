@@ -3,6 +3,8 @@
 //! 1. `src/core/` 里的模块只准用 `crate::core::…` 引用自己人，不得回头依赖
 //!    `crate::json`、`crate::guide` 这类兄弟模块——core 要能整块切出去复用。
 //! 2. 除正则引擎外不引入第三方库：错误类型、JSON 读写都由本 crate 自己实现。
+//!    命令行用的 `unicode-width` 是 optional，只有 `cli` feature 能打开，
+//!    所以默认构建与 `json` 构建的外部依赖仍然只有 regex。
 //! 3. 名字只留在自己那一层：crate 根只声明模块、不 re-export；core 的门面固定是
 //!    四个类型 + 八个模块。要短名由使用方自己 `use` 或取别名，库不替用户决定。
 //!
@@ -112,35 +114,123 @@ fn core_has_no_third_party_dependency_but_regex() {
 fn manifest_depends_on_regex_only() {
     let manifest = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"))
         .expect("Cargo.toml should be readable");
-    let names = dependency_names(&manifest);
-    assert_eq!(names, ["regex"], "only regex should be listed: {names:?}");
+    let entries = dependency_entries(&manifest);
+    let names: Vec<&str> = entries.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(names, ["regex", "unicode-width"], "unexpected dependencies: {names:?}");
+
+    // 除了正则引擎，其余依赖必须是 optional，且只有 `cli` 这个 feature 能打开它——
+    // 这样默认构建与 `--features json` 的外部依赖仍然只有 regex。
+    for (name, line) in &entries {
+        if name == "regex" {
+            assert!(!line.contains("optional"), "regex must stay a hard dependency");
+            continue;
+        }
+        assert!(
+            line.contains("optional = true"),
+            "{name} must be optional so that only `cli` can pull it in: {line}"
+        );
+    }
+    assert!(
+        feature_list(&manifest, "cli").contains(&"dep:unicode-width".to_string()),
+        "`cli` must be the feature that turns unicode-width on"
+    );
+    for feature in ["core", "json"] {
+        let deps = feature_list(&manifest, feature);
+        assert!(
+            deps.iter().all(|item| !item.starts_with("dep:")),
+            "feature `{feature}` must not pull in an external crate: {deps:?}"
+        );
+    }
 }
 
-/// 取依赖名：既认手写的 `[dependencies]` 段，也认 `cargo package` 规范化后的 `[dependencies.regex]` 表。
-fn dependency_names(manifest: &str) -> Vec<String> {
-    let mut names = Vec::new();
+/// 取依赖名与它的属性原文，两种写法都认：手写的 `[dependencies]` 段（`name = "…"`）
+/// 与 `cargo package` 规范化后的 `[dependencies.name]` 表。
+fn dependency_entries(manifest: &str) -> Vec<(String, String)> {
+    let mut entries: Vec<(String, String)> = Vec::new();
     let mut in_table = false;
+    let mut table_dep: Option<String> = None;
     for raw in manifest.lines() {
         let line = raw.trim();
         if line.starts_with('[') {
             in_table = line == "[dependencies]";
+            table_dep = None;
             if let Some(name) = line
                 .strip_prefix("[dependencies.")
                 .and_then(|rest| rest.strip_suffix(']'))
             {
-                names.push(name.trim().to_string());
+                let name = name.trim().to_string();
+                entries.push((name.clone(), String::new()));
+                table_dep = Some(name);
             }
             continue;
         }
-        if !in_table || line.is_empty() || line.starts_with('#') {
+        if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        if let Some((key, _)) = line.split_once('=') {
-            names.push(key.trim().to_string());
+        if let Some(name) = &table_dep {
+            let entry = entries
+                .iter_mut()
+                .find(|(item, _)| item == name)
+                .expect("the table dependency should be listed");
+            entry.1.push(' ');
+            entry.1.push_str(line);
+            continue;
+        }
+        if in_table {
+            if let Some((key, value)) = line.split_once('=') {
+                entries.push((key.trim().to_string(), value.trim().to_string()));
+            }
         }
     }
-    names.sort();
-    names
+    entries.sort_by(|left, right| left.0.cmp(&right.0));
+    entries
+}
+
+/// 取 `[features]` 里某一项的成员列表。
+fn feature_list(manifest: &str, feature: &str) -> Vec<String> {
+    // `cargo package` 会把单行数组重排成多行（`cli = [\n    "json",\n    …\n]`），
+    // 所以命中 key 后要一路吞到闭合的 `]`，不能指望值在一行里。
+    let mut in_table = false;
+    let mut collecting = false;
+    let mut items = Vec::new();
+    for raw in manifest.lines() {
+        let line = raw.trim();
+        if line.starts_with('[') && !collecting {
+            in_table = line == "[features]";
+            continue;
+        }
+        if !in_table {
+            continue;
+        }
+        if !collecting {
+            let Some((key, value)) = line.split_once('=') else {
+                continue;
+            };
+            if key.trim() != feature {
+                continue;
+            }
+            collecting = !value.contains(']');
+            let value = value.trim().trim_start_matches('[').trim_end_matches(']');
+            items.extend(split_feature_items(value));
+        } else {
+            let done = line.contains(']');
+            let value = line.trim_end_matches(']');
+            items.extend(split_feature_items(value));
+            if done {
+                break;
+            }
+        }
+    }
+    items
+}
+
+/// 把 feature 成员片段切成干净的名字列表。
+fn split_feature_items(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(|item| item.trim().trim_matches('"').to_string())
+        .filter(|item| !item.is_empty())
+        .collect()
 }
 
 /// 收集一段源码里 `pub use` 引入的名字（跳过注释）。

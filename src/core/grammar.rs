@@ -76,6 +76,7 @@ use crate::core::value::Value;
 pub struct GrammarSpec {
     /// 起始符号；省略时取第一条产生式。
     pub start: Option<String>,
+    /// 全部产生式；同名多条即多个候选。
     pub productions: Vec<ProductionSpec>,
 }
 
@@ -116,34 +117,42 @@ pub enum Expr {
 }
 
 impl Expr {
+    /// 引用非终结符（必须有同名产生式）。
     pub fn rule(name: impl Into<String>) -> Self {
         Expr::Rule(name.into())
     }
 
+    /// 引用词法类别（必须是 `rules` 里的规则名）。
     pub fn token(name: impl Into<String>) -> Self {
         Expr::Token(name.into())
     }
 
+    /// 字面量终结符（按 token 原文匹配）。
     pub fn literal(text: impl Into<String>) -> Self {
         Expr::Literal(text.into())
     }
 
+    /// 连接：`a b c`。
     pub fn seq(items: impl IntoIterator<Item = Expr>) -> Self {
         Expr::Seq(items.into_iter().collect())
     }
 
+    /// 选择：`a | b | c`。
     pub fn alt(items: impl IntoIterator<Item = Expr>) -> Self {
         Expr::Alt(items.into_iter().collect())
     }
 
+    /// 零或多次。
     pub fn star(expr: Expr) -> Self {
         Expr::Star(Box::new(expr))
     }
 
+    /// 一或多次。
     pub fn plus(expr: Expr) -> Self {
         Expr::Plus(Box::new(expr))
     }
 
+    /// 零或一次。
     pub fn opt(expr: Expr) -> Self {
         Expr::Opt(Box::new(expr))
     }
@@ -275,6 +284,7 @@ impl ProductionSpec {
         })
     }
 
+    /// 转成结构化 JSON 值。
     pub fn to_value(&self) -> Value {
         let mut map = std::collections::BTreeMap::new();
         map.insert("name".to_string(), Value::text(&self.name));
@@ -433,6 +443,7 @@ pub enum Terminal {
 }
 
 impl Terminal {
+    /// 用于错误提示与 BNF 视图的名字。
     pub fn label(&self) -> &str {
         match self {
             Terminal::Literal(text) | Terminal::Class(text) => text,
@@ -451,11 +462,14 @@ impl Terminal {
 /// 产生式右部的一个符号。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Item {
+    /// 非终结符。
     NonTerminal(String),
+    /// 终结符（字面量或词法类别）。
     Terminal(Terminal),
 }
 
 impl Item {
+    /// 用于错误提示与 BNF 视图的名字。
     pub fn label(&self) -> &str {
         match self {
             Item::NonTerminal(name) => name,
@@ -467,7 +481,9 @@ impl Item {
 /// 一条已降级的产生式。同名多条即为多个候选。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Production {
+    /// 左部。
     pub name: String,
+    /// 右部符号，按顺序；为空即 ε 产生式。
     pub items: Vec<Item>,
     /// 由 `*`、`+`、`?`、分组生成的辅助产生式。
     pub synthetic: bool,
@@ -558,8 +574,8 @@ impl Grammar {
         let mut sources: Vec<(String, String)> = Vec::new();
         for (name, expr) in &productions {
             lowering.production = name.clone();
-            for alternative in alternatives(expr) {
-                let items = lowering.sequence(&alternative)?;
+            for alternative in top_level_alternatives(expr) {
+                let items = lowering.top_level(alternative)?;
                 compiled.push(Production {
                     name: name.clone(),
                     items,
@@ -576,6 +592,17 @@ impl Grammar {
             }
         }
         compiled.extend(lowering.productions);
+
+        // 不可派生的非终结符（只引用自己，或引用了这样的符号）永远推不出任何终结符，
+        // 文法因此永远匹配不了输入。装配期就报出来，比让 `parse` 事后给一句
+        // "expected …" 强。ε 产生式算可派生（它推出空串）。
+        let productive = productive_names(&compiled);
+        if let Some((name, _)) = productions
+            .iter()
+            .find(|(name, _)| !productive.contains(name.as_str()))
+        {
+            return Err(GrammarError::NonProductive { name: name.clone() });
+        }
 
         let mut index: HashMap<String, Vec<usize>> = HashMap::new();
         for (position, production) in compiled.iter().enumerate() {
@@ -603,6 +630,7 @@ impl Grammar {
         &self.productions
     }
 
+    /// 按下标取产生式。
     pub fn production(&self, index: usize) -> &Production {
         &self.productions[index]
     }
@@ -682,6 +710,32 @@ impl fmt::Display for Grammar {
     }
 }
 
+/// 算出可以推出「某个终结符串」的非终结符集合（ε 产生式算在内）。
+///
+/// 不动点迭代：一条产生式的右部全是终结符或已可派生的非终结符时，左部也可派生。
+fn productive_names(productions: &[Production]) -> HashSet<String> {
+    let mut productive: HashSet<String> = HashSet::new();
+    loop {
+        let mut changed = false;
+        for production in productions {
+            if productive.contains(&production.name) {
+                continue;
+            }
+            let ready = production.items.iter().all(|item| match item {
+                Item::Terminal(_) => true,
+                Item::NonTerminal(name) => productive.contains(name),
+            });
+            if ready {
+                productive.insert(production.name.clone());
+                changed = true;
+            }
+        }
+        if !changed {
+            return productive;
+        }
+    }
+}
+
 /// 流畅构建器。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GrammarBuilder {
@@ -690,6 +744,7 @@ pub struct GrammarBuilder {
 }
 
 impl GrammarBuilder {
+    /// 空构建器：没有起始符号，也没有产生式。
     pub fn new() -> Self {
         Self::default()
     }
@@ -707,6 +762,7 @@ impl GrammarBuilder {
         self
     }
 
+    /// 装配成文法：检查符号引用与可派生性，并降级 `*` / `+` / `?` 与分组。
     pub fn build(self) -> Result<Grammar, GrammarError> {
         Grammar::from_exprs(self.start, self.productions)
     }
@@ -738,6 +794,11 @@ pub enum GrammarError {
         /// 引用发生的产生式。
         production: String,
     },
+    /// 某条产生式永远推不出终结符串（只递归自己，或依赖了这样的符号）。
+    NonProductive {
+        /// 推不出任何终结符串的非终结符名。
+        name: String,
+    },
 }
 
 impl fmt::Display for GrammarError {
@@ -757,6 +818,11 @@ impl fmt::Display for GrammarError {
                 "production {production} references undefined token class {name}\
                  (no rule with that name, or the rule is a skip rule)"
             ),
+            GrammarError::NonProductive { name } => write!(
+                f,
+                "non-terminal {name} can never produce a terminal string \
+                 (it only refers to itself, directly or through other non-terminals)"
+            ),
         }
     }
 }
@@ -767,27 +833,15 @@ impl std::error::Error for GrammarError {}
 // 表达式归一化与降级
 // ---------------------------------------------------------------------------
 
-/// 把表达式展开成"候选序列"的列表（分配律展开 `Seq` 里的 `Alt`）。
-fn alternatives(expr: &Expr) -> Vec<Vec<Expr>> {
+/// 顶层的选择候选：`a ::= x | y` 展开成两条同名产生式。
+///
+/// **只展开最外层的 `Alt`**。`Seq` 里的 `Alt` 不在这里做分配律展开——那会让
+/// 「一个 `seq` 里嵌 n 个二选一」变成 2ⁿ 条产生式；子表达式交给 [`Lowering::item`]
+/// 降级成辅助产生式，规模保持线性。
+fn top_level_alternatives(expr: &Expr) -> Vec<&Expr> {
     match expr {
-        Expr::Alt(items) => items.iter().flat_map(alternatives).collect(),
-        Expr::Seq(items) => {
-            let mut result: Vec<Vec<Expr>> = vec![Vec::new()];
-            for item in items {
-                let sub = alternatives(item);
-                let mut next = Vec::with_capacity(result.len() * sub.len());
-                for prefix in &result {
-                    for tail in &sub {
-                        let mut sequence = prefix.clone();
-                        sequence.extend(tail.clone());
-                        next.push(sequence);
-                    }
-                }
-                result = next;
-            }
-            result
-        }
-        other => vec![vec![other.clone()]],
+        Expr::Alt(items) => items.iter().flat_map(top_level_alternatives).collect(),
+        other => vec![other],
     }
 }
 
@@ -810,6 +864,17 @@ impl Lowering<'_> {
         atoms.iter().map(|atom| self.item(atom)).collect()
     }
 
+    /// 顶层表达式：`Seq` 直接摊成本条产生式的右部，其余当成单个符号。
+    ///
+    /// 只有顶层这样处理——嵌套的 `Seq` 会降级成一个辅助产生式，避免"把子表达式
+    /// 平铺进父产生式"时与外侧符号做交叉积。
+    fn top_level(&mut self, expr: &Expr) -> Result<Vec<Item>, GrammarError> {
+        match expr {
+            Expr::Seq(items) => self.sequence(items),
+            other => Ok(vec![self.item(other)?]),
+        }
+    }
+
     fn item(&mut self, expr: &Expr) -> Result<Item, GrammarError> {
         match expr {
             Expr::Rule(name) => {
@@ -830,10 +895,21 @@ impl Lowering<'_> {
                 Ok(Item::Terminal(Terminal::Class(name.clone())))
             }
             Expr::Literal(text) => Ok(Item::Terminal(Terminal::Literal(text.clone()))),
-            Expr::Seq(_) | Expr::Alt(_) => {
+            // 分组：一个辅助产生式装下整段右部，规模与子表达式大小成正比。
+            Expr::Seq(items) => {
                 let helper = self.fresh("group");
-                for alternative in alternatives(expr) {
-                    let items = self.sequence(&alternative)?;
+                let items = self.sequence(items)?;
+                self.productions.push(Production {
+                    name: helper.clone(),
+                    items,
+                    synthetic: true,
+                });
+                Ok(Item::NonTerminal(helper))
+            }
+            Expr::Alt(items) => {
+                let helper = self.fresh("group");
+                for alternative in items {
+                    let items = self.top_level(alternative)?;
                     self.productions.push(Production {
                         name: helper.clone(),
                         items,
@@ -857,31 +933,40 @@ impl Lowering<'_> {
                 });
                 Ok(Item::NonTerminal(name))
             }
-            Expr::Star(inner) | Expr::Plus(inner) => {
-                let plus = matches!(expr, Expr::Plus(_));
+            // 重复用**左递归**降级：`$star ::= $star a | ε`、`$plus ::= a | $plus a`。
+            //
+            // 右递归（`$star ::= a $star | ε`）在 Earley 里是最坏形状——每归约一层都要把
+            // "剩余全部子值"复制给每个父项，时间 O(n³)、内存 O(n²)。左递归每步只把已累积
+            // 的列表往后接一个元素，规模降到 O(n²) 时间 / O(n)；摊平后的顺序不变。
+            Expr::Star(inner) => {
                 let inner = self.item(inner)?;
-                let star = self.fresh("star");
+                let name = self.fresh("star");
                 self.productions.push(Production {
-                    name: star.clone(),
-                    items: vec![inner.clone(), Item::NonTerminal(star.clone())],
+                    name: name.clone(),
+                    items: vec![Item::NonTerminal(name.clone()), inner],
                     synthetic: true,
                 });
                 self.productions.push(Production {
-                    name: star.clone(),
+                    name: name.clone(),
                     items: Vec::new(),
                     synthetic: true,
                 });
-                if plus {
-                    let name = self.fresh("plus");
-                    self.productions.push(Production {
-                        name: name.clone(),
-                        items: vec![inner, Item::NonTerminal(star)],
-                        synthetic: true,
-                    });
-                    Ok(Item::NonTerminal(name))
-                } else {
-                    Ok(Item::NonTerminal(star))
-                }
+                Ok(Item::NonTerminal(name))
+            }
+            Expr::Plus(inner) => {
+                let inner = self.item(inner)?;
+                let name = self.fresh("plus");
+                self.productions.push(Production {
+                    name: name.clone(),
+                    items: vec![inner.clone()],
+                    synthetic: true,
+                });
+                self.productions.push(Production {
+                    name: name.clone(),
+                    items: vec![Item::NonTerminal(name.clone()), inner],
+                    synthetic: true,
+                });
+                Ok(Item::NonTerminal(name))
             }
         }
     }
@@ -945,6 +1030,83 @@ mod tests {
             .find(|production| production.name == "$star1")
             .expect("should generate a helper production");
         assert_eq!(star.items.len(), 2);
+    }
+
+    #[test]
+    fn lowers_repetition_left_recursively() {
+        // `$star ::= $star item | ε`：左递归在 Earley 里是 O(n²)，右递归是 O(n³)。
+        let grammar = spec(&[
+            ("list", Expr::star(Expr::rule("item"))),
+            ("item", Expr::token("number")),
+        ])
+        .parse_grammar()
+        .expect("the grammar should be valid");
+
+        let indices = grammar.productions_of("$star1");
+        assert_eq!(indices.len(), 2, "one recursive production plus epsilon");
+        let recursive = grammar.production(indices[0]);
+        assert_eq!(
+            recursive.items.first(),
+            Some(&Item::NonTerminal("$star1".to_string())),
+            "the recursive production must start with the non-terminal itself: {recursive}"
+        );
+        assert!(grammar.production(indices[1]).is_empty());
+        assert!(grammar.is_synthetic("$star1"));
+    }
+
+    #[test]
+    fn nested_alternatives_stay_linear() {
+        // 一个 `seq` 里嵌 12 个二选一：分配律展开会得到 4096 条产生式，
+        // 逐项降级则每项只多一个辅助产生式。
+        let mut seq = Vec::new();
+        for index in 0..12 {
+            seq.push(Expr::alt([
+                Expr::literal(format!("a{index}")),
+                Expr::literal(format!("b{index}")),
+            ]));
+        }
+        let grammar = Grammar::builder()
+            .start("program")
+            .production("program", Expr::seq(seq))
+            .build()
+            .expect("the grammar should be valid");
+        assert!(
+            grammar.productions().len() <= 30,
+            "expected linear growth, got {} productions",
+            grammar.productions().len()
+        );
+    }
+
+    #[test]
+    fn rejects_non_productive_nonterminal() {
+        // `dead` 只能递归自己，永远推不出终结符串——装配期就该报错，而不是等解析。
+        let error = Grammar::builder()
+            .start("program")
+            .production(
+                "program",
+                Expr::alt([Expr::literal("x"), Expr::rule("dead")]),
+            )
+            .production(
+                "dead",
+                Expr::seq([Expr::rule("dead"), Expr::literal("y")]),
+            )
+            .build()
+            .expect_err("a non-productive non-terminal should be rejected");
+        assert!(
+            matches!(error, GrammarError::NonProductive { ref name } if name == "dead"),
+            "{error}"
+        );
+        assert!(error.to_string().contains("never produce"), "{error}");
+    }
+
+    #[test]
+    fn optional_and_empty_productions_stay_productive() {
+        // ε 会产生空串，仍然算可派生——别把合法的可选结构误判成死循环。
+        Grammar::builder()
+            .start("program")
+            .production("program", Expr::opt(Expr::token("number")))
+            .build()
+            .expect("`opt` must stay productive");
     }
 
     #[test]

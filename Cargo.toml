@@ -1,7 +1,9 @@
 [package]
 name = "bnf_analyzer"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
+# edition 2024 的下限；写出来，用户不必自己猜。
+rust-version = "1.85"
 description = "Configurable source analyzer: lexical rules plus a grammar, with JSON configuration and a CLI"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
@@ -29,12 +31,14 @@ name = "bnf_analyzer"
 default = ["core"]
 core = []
 json = ["core"]
-cli = ["json"]
+cli = ["json", "dep:unicode-width"]
 
 [dependencies]
 # 唯一的第三方依赖：正则引擎。错误类型、JSON 读写都由本 crate 自己实现，
 # core 也不引用 crate 里 core 以外的任何模块。
 regex = "1.13.1"
+# 只有命令行用：把制表符与宽字符算成终端列数，让报错的 `^` 对得准。
+unicode-width = { version = "0.2", optional = true }
 
 [[bin]]
 name = "bnf-analyzer"
